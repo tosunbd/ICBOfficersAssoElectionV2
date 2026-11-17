@@ -38,6 +38,7 @@ class BallotResponse(BaseModel):
     is_valid: bool
     entered_by: str | None = None
     corrected_by: str | None = None
+    approved_by: str | None = None
     has_preview: bool = False
     scanned_at: datetime
     processed_at: datetime | None

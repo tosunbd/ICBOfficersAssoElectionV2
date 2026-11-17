@@ -14,8 +14,8 @@ SQLite database, and the results, the dashboard and the reports follow at once.
 
 | Username | Password | Role | Does |
 |---|---|---|---|
-| `SA` | `sadmin` | Super Admin | Everything: reports, results, settings, delete a ballot, set any password, watch the entry |
-| `Admin` | `admin` | Admin | Reports, results, election set-up, watch the entry (view only) |
+| `SA` | `sadmin` | Super Admin | Everything: reports, results, settings, **approve corrections**, delete a ballot, set any password, watch the entry |
+| `Admin` | `admin` | Admin | Reports, results, election set-up, **approve corrections**, watch the entry |
 | `EC1` | `EC1` | Election Commissioner 1 | Enters ballots **001 – 150** |
 | `EC2` | `EC2` | Election Commissioner 2 | Enters ballots **151 – 300** |
 | `EC3` | `EC3` | Election Commissioner 3 | Enters ballots **301 – 455** |
@@ -45,12 +45,33 @@ The number ranges are `ENTRY_RANGES` in `.env`.
   Null marks are shown in red on the form and are never counted; the other
   posts of the same ballot count as usual. The form asks for confirmation
   before saving a ballot with null votes or a blank ballot.
-* A saved ballot can be corrected by the commissioner who owns its number
-  ("Your saved ballots"). Corrections are marked in the register, the reports
-  ("Manual") and the audit log.
+* **Blank ballot:** a voter who votes for nobody. Save the form with no box
+  ticked (and confirm): the paper is counted as a ballot, with no vote for any
+  candidate.
 * The three desks work at the same time. SA and Admin see each desk live under
   **Ballot Entry · Live**, including the boxes being ticked before saving, and
-  can open any saved ballot — view only.
+  can open any saved ballot.
+
+## Correcting a wrong entry (needs approval)
+
+A saved ballot is never changed by the desk itself.
+
+1. The commissioner opens the ballot from **Your saved ballots** (own number
+   range only), changes the ticks and presses **Send for approval**.
+2. The corrected ticks are stored in a separate table (`ballot_corrections`).
+   **Nothing is counted from it**: the ballot, the totals, the dashboard and the
+   reports stay exactly as they were.
+3. SA or Admin sees the request under **Ballot Entry · Live** (and a notice on
+   the Overview), can compare *Saved* against *Corrected* on the ballot paper,
+   and presses **Approve** or **Reject**.
+   * **Approve** — the ballot's votes are replaced in the real tables and the
+     totals, the dashboard and the reports change at once. The ballot is marked
+     "Corrected" (who asked, who approved); the reports show it as "Manual".
+   * **Reject** — nothing changes.
+4. Until a decision the commissioner can change the request or **withdraw** it,
+   and sees the outcome of each request under "Your corrections".
+
+Every request, approval, rejection and withdrawal is written to the audit log.
 
 ## Pages
 
@@ -82,7 +103,7 @@ start together with the users and the election.
 
 ```
 cd icbOfficerAssoAPI
-.venv\Scripts\python -m pytest        # 31 tests: users, ranges, numbering, null-vote rules, reports
+.venv\Scripts\python -m pytest        # 33 tests: users, ranges, numbering, null-vote rules, blank ballots, approvals, reports
 cd ..\icbOfficerAssoUI
 npm run lint && npm run build
 ```
@@ -90,7 +111,8 @@ npm run lint && npm run build
 ## Layout
 
 ```
-icbOfficerAssoAPI/app/routers/entry.py          ballot entry API (ranges, numbering, live drafts)
+icbOfficerAssoAPI/app/routers/entry.py          ballot entry API (ranges, numbering, live drafts, corrections and approval)
+icbOfficerAssoAPI/app/models/ballot_correction.py   corrections waiting for approval (separate table)
 icbOfficerAssoAPI/app/services/ballot_service.py  the counting rules
 icbOfficerAssoAPI/app/seed.py                   users + the 2026 ballot
 icbOfficerAssoUI/src/app/admin/entry/page.tsx   entry desk and live monitor

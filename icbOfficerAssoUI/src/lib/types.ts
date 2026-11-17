@@ -81,6 +81,7 @@ export interface Ballot {
   is_valid: boolean;
   entered_by: string | null;
   corrected_by: string | null;
+  approved_by: string | null;
   has_preview: boolean;
   scanned_at: string;
   processed_at: string | null;
@@ -280,6 +281,30 @@ export interface NullPost {
   allowed: number;
 }
 
+/** A change to a saved ballot, kept apart until the Super Admin or the Admin decides on it. */
+export interface Correction {
+  id: number;
+  ballot_id: number;
+  ballot_no: number;
+  label: string;
+  status: "pending" | "approved" | "rejected" | "withdrawn";
+  requested_by: string;
+  requested_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  candidate_ids: number[];           // the boxes as they should be
+  previous_candidate_ids: number[];  // the boxes saved when the request was made
+  counted: number;
+  null_marks: number;
+  previous_counted: number;
+  previous_null_marks: number;
+}
+
+export interface DecisionResult {
+  correction: Correction;
+  ballot: EntryBallot;
+}
+
 /** One saved ballot exactly as entered. */
 export interface EntryBallot {
   ballot_id: number;
@@ -290,11 +315,14 @@ export interface EntryBallot {
   entered_at: string | null;
   corrected_by: string | null;
   corrected_at: string | null;
+  approved_by: string | null;
   candidate_ids: number[];       // every box marked on the paper
   null_candidate_ids: number[];  // marked but not counted
   counted: number;
   null_marks: number;
   null_posts: NullPost[];
+  /** A correction of this ballot is waiting for approval. */
+  pending: Correction | null;
 }
 
 export interface DeskDraft {
@@ -320,6 +348,7 @@ export interface Desk {
   last_ballot_no: number | null;
   last_label: string | null;
   last_saved_at: string | null;
+  pending_corrections: number;
 }
 
 export interface EntryElection {
@@ -339,6 +368,8 @@ export interface EntryState {
   me: string | null;
   total_entered: number;
   total_ballots: number;
+  /** Corrections waiting for the Super Admin / Admin. */
+  pending_corrections: number;
   server_time: string;
 }
 

@@ -140,14 +140,14 @@ export default function BallotsPage() {
                         </td>
                       )}
                       <td><Link href={`/admin/entry?ballot=${b.ballot_no ?? ""}`} className="row-link"><span className="chip-no">{b.ballot_paper_no ?? `#${b.id}`}</span></Link></td>
-                      <td><span className="badge badge-muted">{b.entered_by ?? "—"}</span>{b.corrected_by && <span className="text-faint text-small"> · corrected by {b.corrected_by}</span>}</td>
+                      <td><span className="badge badge-muted">{b.entered_by ?? "—"}</span>{b.corrected_by && <span className="text-faint text-small"> · corrected by {b.corrected_by}{b.approved_by ? `, approved by ${b.approved_by}` : ""}</span>}</td>
                       <td>
                         <span className="flex items-center gap-2">
                           <BallotStatusBadge status={b.status} />
                           {b.ocr_warnings.length > 0 && <span title={b.ocr_warnings.join("\n")} className="text-warning" style={{ display: "inline-flex" }}><Icon name="alert" size={15} /></span>}
                         </span>
                       </td>
-                      <td className="num">{b.boxes_detected}</td>
+                      <td className="num">{b.boxes_detected === 0 ? <span className="badge badge-muted">blank</span> : b.boxes_detected}</td>
                       <td className="num"><strong>{b.total_votes_extracted}</strong></td>
                       <td className="num">{nulls > 0 ? <strong className="text-error">{nulls}</strong> : <span className="text-faint">0</span>}</td>
                       <td className="text-faint text-small" style={{ whiteSpace: "nowrap" }}>{formatDateTime(b.reviewed_at ?? b.processed_at ?? b.scanned_at)}</td>

@@ -23,18 +23,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models import Ballot, Election
+from app.models import Ballot, BallotCorrection, Election
+from app.models.ballot_correction import CorrectionStatus
 from app.models.admin_user import AdminUser, Role
 from app.models.ballot import BallotStatus
 from app.models.election import ElectionStatus
 from app.schemas.entry import (
-    CorrectionRequest, Desk, DeskDraft, DraftRequest, EntryBallot, EntryElection, EntryRequest, EntryState,
-    NullPost, SaveResult,
+    Correction, CorrectionRequest, DecisionResult, Desk, DeskDraft, DraftRequest, EntryBallot, EntryElection,
+    EntryRequest, EntryState, NullPost, SaveResult,
 )
 from app.services.ballot_service import ballot_service
 from app.services.events import notifier
 from app.utils import audit
-from app.utils.security import get_current_user, get_ec_user
+from app.utils.security import get_admin_user, get_current_user, get_ec_user
 from app.utils.time import utcnow
 
 router = APIRouter(prefix="/api/entry", tags=["Ballot entry"])
@@ -108,7 +109,7 @@ async def _entered(db: AsyncSession, election_id: int) -> dict[int, Ballot]:
     return {b.ballot_no: b for b in result.scalars().all()}
 
 
-def _desk(user: AdminUser, entered: dict[int, Ballot]) -> Desk:
+def _desk(user: AdminUser, entered: dict[int, Ballot], pending: dict[int, BallotCorrection] | None = None) -> Desk:
     mine = {no: b for no, b in entered.items() if _in_range(user, no)}
     next_no = _next_missing(user.ballot_from, user.ballot_to, set(mine))
     live = _desk_live(user.username)
@@ -123,10 +124,36 @@ def _desk(user: AdminUser, entered: dict[int, Ballot]) -> Desk:
         last_ballot_no=last.ballot_no if last else None,
         last_label=settings.format_ballot_no(last.ballot_no) if last else None,
         last_saved_at=(last.reviewed_at or last.processed_at) if last else None,
+        pending_corrections=sum(1 for c in (pending or {}).values() if _in_range(user, c.ballot_no)),
     )
 
 
-def _entry_ballot(ballot: Ballot, positions=None) -> EntryBallot:
+async def _pending(db: AsyncSession, election_id: int) -> dict[int, BallotCorrection]:
+    """The corrections waiting for approval, by ballot id (at most one per ballot)."""
+    result = await db.execute(
+        select(BallotCorrection)
+        .where(BallotCorrection.election_id == election_id, BallotCorrection.status == CorrectionStatus.PENDING)
+        .order_by(BallotCorrection.id)
+        .execution_options(populate_existing=True)
+    )
+    return {c.ballot_id: c for c in result.scalars().all()}
+
+
+def _correction(item: BallotCorrection, positions, candidates) -> Correction:
+    ids = sorted(json.loads(item.candidate_ids))
+    previous = sorted(json.loads(item.previous_candidate_ids))
+    counted, nulls = ballot_service.preview(positions, candidates, ids)
+    previous_counted, previous_nulls = ballot_service.preview(positions, candidates, previous)
+    return Correction(
+        id=item.id, ballot_id=item.ballot_id, ballot_no=item.ballot_no, label=settings.format_ballot_no(item.ballot_no),
+        status=item.status, requested_by=item.requested_by, requested_at=item.requested_at,
+        decided_by=item.decided_by, decided_at=item.decided_at,
+        candidate_ids=ids, previous_candidate_ids=previous,
+        counted=counted, null_marks=nulls, previous_counted=previous_counted, previous_null_marks=previous_nulls,
+    )
+
+
+def _entry_ballot(ballot: Ballot, positions=None, pending: Correction | None = None) -> EntryBallot:
     marked = [v.candidate_id for v in ballot.votes]
     null_ids = [v.candidate_id for v in ballot.votes if not v.is_valid]
     null_posts: list[NullPost] = []
@@ -142,9 +169,9 @@ def _entry_ballot(ballot: Ballot, positions=None) -> EntryBallot:
     return EntryBallot(
         ballot_id=ballot.id, ballot_no=ballot.ballot_no, label=settings.format_ballot_no(ballot.ballot_no),
         status=ballot.status, entered_by=ballot.entered_by, entered_at=ballot.processed_at or ballot.scanned_at,
-        corrected_by=ballot.corrected_by, corrected_at=ballot.reviewed_at,
+        corrected_by=ballot.corrected_by, corrected_at=ballot.reviewed_at, approved_by=ballot.approved_by,
         candidate_ids=sorted(marked), null_candidate_ids=sorted(null_ids),
-        counted=len(marked) - len(null_ids), null_marks=len(null_ids), null_posts=null_posts,
+        counted=len(marked) - len(null_ids), null_marks=len(null_ids), null_posts=null_posts, pending=pending,
     )
 
 
@@ -164,7 +191,8 @@ async def entry_state(db: AsyncSession = Depends(get_db), user: AdminUser = Depe
         _desk_live(user.username).last_seen = utcnow()
     election = await _active_election(db)
     entered = await _entered(db, election.id) if election else {}
-    desks = [_desk(ec, entered) for ec in await _ec_users(db)]
+    pending = await _pending(db, election.id) if election else {}
+    desks = [_desk(ec, entered, pending) for ec in await _ec_users(db)]
     return EntryState(
         election=EntryElection(
             id=election.id, title=election.title, title_bn=election.title_bn, year=election.year,
@@ -175,6 +203,7 @@ async def entry_state(db: AsyncSession = Depends(get_db), user: AdminUser = Depe
         me=user.username if user.is_ec and user.ballot_from is not None else None,
         total_entered=sum(d.entered for d in desks),
         total_ballots=sum(d.total for d in desks),
+        pending_corrections=len(pending),
         server_time=utcnow(),
     )
 
@@ -212,8 +241,12 @@ async def recent_ballots(
     if owner is not None:
         query = query.where(Ballot.ballot_no >= owner.ballot_from, Ballot.ballot_no <= owner.ballot_to)
     result = await db.execute(query.order_by(Ballot.ballot_no.desc()).limit(limit))
-    positions, _ = await ballot_service.layout(db, election.id)
-    return [_entry_ballot(b, positions) for b in result.scalars().all()]
+    positions, candidates = await ballot_service.layout(db, election.id)
+    pending = await _pending(db, election.id)
+    return [
+        _entry_ballot(b, positions, _correction(pending[b.id], positions, candidates) if b.id in pending else None)
+        for b in result.scalars().all()
+    ]
 
 
 @router.get("/ballots/{ballot_no}", response_model=EntryBallot)
@@ -225,8 +258,9 @@ async def get_entry_ballot(ballot_no: int, db: AsyncSession = Depends(get_db), u
     ballot = (await _entered(db, election.id)).get(ballot_no)
     if not ballot:
         raise HTTPException(status_code=404, detail=f"Ballot {settings.format_ballot_no(ballot_no)} has not been entered yet")
-    positions, _ = await ballot_service.layout(db, election.id)
-    return _entry_ballot(ballot, positions)
+    positions, candidates = await ballot_service.layout(db, election.id)
+    waiting = (await _pending(db, election.id)).get(ballot.id)
+    return _entry_ballot(ballot, positions, _correction(waiting, positions, candidates) if waiting else None)
 
 
 @router.post("/ballots", response_model=SaveResult, status_code=201)
@@ -284,49 +318,188 @@ async def enter_ballot(data: EntryRequest, db: AsyncSession = Depends(get_db), u
     return result
 
 
+# ------------------------------------------------------------- corrections
+# A saved ballot is never changed by the desk itself.  The corrected ticks go
+# to the table `ballot_corrections` (nothing is counted from it) and wait there
+# until the Super Admin or the Admin approves: only then are the ballot's votes
+# replaced and the totals, the dashboard and the reports updated.
+
+async def _result(db: AsyncSession, election_id: int, ballot_no: int, user: AdminUser) -> SaveResult:
+    entered = await _entered(db, election_id)
+    pending = await _pending(db, election_id)
+    positions, candidates = await ballot_service.layout(db, election_id)
+    ballot = entered[ballot_no]
+    waiting = pending.get(ballot.id)
+    return SaveResult(
+        ballot=_entry_ballot(ballot, positions, _correction(waiting, positions, candidates) if waiting else None),
+        desk=_desk(user, entered, pending),
+    )
+
+
 @router.put("/ballots/{ballot_no}", response_model=SaveResult)
-async def correct_ballot(
+async def request_correction(
     ballot_no: int, data: CorrectionRequest,
     db: AsyncSession = Depends(get_db), user: AdminUser = Depends(get_ec_user),
 ):
-    """Correct a ballot the caller's desk has already saved (a typing mistake): its votes are replaced."""
+    """Ask for a correction of a ballot the caller's desk has saved (a wrong entry).
+
+    The ballot and the totals stay as they are until the Super Admin or the
+    Admin approves.  Asking again for the same ballot replaces the earlier request."""
     label = settings.format_ballot_no(ballot_no)
     if not _in_range(user, ballot_no):
         raise _range_error(user, ballot_no)
 
     async with _save_lock:
         election = await _require_election(db)
-        if election.counting_paused:
-            raise HTTPException(status_code=409, detail="Counting is paused by the election commission. Saving is possible again after START.")
-        entered = await _entered(db, election.id)
-        ballot = entered.get(ballot_no)
+        ballot = (await _entered(db, election.id)).get(ballot_no)
         if not ballot:
             raise HTTPException(status_code=404, detail=f"Ballot {label} has not been entered yet")
-        before = sorted(v.candidate_id for v in ballot.votes)
-        if before == sorted(set(data.candidate_ids)):
-            positions, _ = await ballot_service.layout(db, election.id)
-            return SaveResult(ballot=_entry_ballot(ballot, positions), desk=_desk(user, entered))  # nothing changed
+        _, candidates = await ballot_service.layout(db, election.id)
+        wanted = sorted(set(data.candidate_ids))
+        unknown = [cid for cid in wanted if cid not in candidates]
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"Candidate {unknown[0]} is not on this ballot")
+        saved = sorted(v.candidate_id for v in ballot.votes)
+        waiting = (await _pending(db, election.id)).get(ballot.id)
+        if wanted == saved:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ballot {label} is already saved exactly like this"
+                       + ("; withdraw the waiting correction if it is not needed any more." if waiting else ": there is nothing to correct."),
+            )
+        if waiting and sorted(json.loads(waiting.candidate_ids)) == wanted:
+            return await _result(db, election.id, ballot_no, user)  # the same request is already waiting
 
-        try:
-            await ballot_service.remove_votes(db, ballot)
-            summary = await ballot_service.store_votes(db, ballot, data.candidate_ids)
-        except ValueError as exc:
-            await db.rollback()
-            raise HTTPException(status_code=400, detail=str(exc))
-        ballot.status = BallotStatus.REVIEWED
-        ballot.reviewed_at = utcnow()
-        ballot.corrected_by = user.username
+        if waiting:
+            waiting.candidate_ids = json.dumps(wanted)
+            waiting.previous_candidate_ids = json.dumps(saved)
+            waiting.requested_by, waiting.requested_by_id, waiting.requested_at = user.username, user.id, utcnow()
+        else:
+            db.add(BallotCorrection(
+                election_id=election.id, ballot_id=ballot.id, ballot_no=ballot_no,
+                candidate_ids=json.dumps(wanted), previous_candidate_ids=json.dumps(saved),
+                status=CorrectionStatus.PENDING, requested_by_id=user.id, requested_by=user.username, requested_at=utcnow(),
+            ))
         audit.record(
-            db, user.id, "ballot_correction",
-            f"Ballot {label} corrected by {user.username}: {summary['counted']} vote(s) counted, "
-            f"{summary['null_marks']} null mark(s); marked before {json.dumps(before)}, now {json.dumps(sorted(set(data.candidate_ids)))}",
+            db, user.id, "correction_request",
+            f"Ballot {label}: {user.username} asked for a correction; marked {json.dumps(saved)}, wanted {json.dumps(wanted)}",
         )
         await db.commit()
-
         live = _desk_live(user.username)
         live.last_seen, live.draft = utcnow(), None
-        entered = await _entered(db, election.id)
-        positions, _ = await ballot_service.layout(db, election.id)
-        result = SaveResult(ballot=_entry_ballot(entered[ballot_no], positions), desk=_desk(user, entered))
+        result = await _result(db, election.id, ballot_no, user)
     notifier.notify()
     return result
+
+
+async def _get_correction(db: AsyncSession, correction_id: int) -> BallotCorrection:
+    item = (await db.execute(
+        select(BallotCorrection).where(BallotCorrection.id == correction_id).execution_options(populate_existing=True)
+    )).scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Correction not found")
+    return item
+
+
+def _must_be_pending(item: BallotCorrection) -> None:
+    if item.status != CorrectionStatus.PENDING:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This correction of ballot {settings.format_ballot_no(item.ballot_no)} was already {item.status} by {item.decided_by or 'the desk'}.",
+        )
+
+
+@router.get("/corrections", response_model=list[Correction])
+async def list_corrections(
+    status: str = Query("pending", description="pending | approved | rejected | withdrawn | all"),
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    user: AdminUser = Depends(get_current_user),
+):
+    """Corrections, oldest waiting first.  A commissioner sees the ones of their own range."""
+    election = await _active_election(db)
+    if not election:
+        return []
+    query = select(BallotCorrection).where(BallotCorrection.election_id == election.id)
+    if status != "all":
+        query = query.where(BallotCorrection.status == status)
+    if user.is_ec:
+        query = query.where(BallotCorrection.ballot_no >= (user.ballot_from or 0), BallotCorrection.ballot_no <= (user.ballot_to or 0))
+    order = BallotCorrection.id if status == "pending" else BallotCorrection.id.desc()
+    items = (await db.execute(query.order_by(order).limit(limit))).scalars().all()
+    positions, candidates = await ballot_service.layout(db, election.id)
+    return [_correction(item, positions, candidates) for item in items]
+
+
+@router.delete("/corrections/{correction_id}", response_model=SaveResult)
+async def withdraw_correction(correction_id: int, db: AsyncSession = Depends(get_db), user: AdminUser = Depends(get_ec_user)):
+    """The commissioner takes a waiting correction back; the ballot stays as it is saved."""
+    async with _save_lock:
+        item = await _get_correction(db, correction_id)
+        if not _in_range(user, item.ballot_no):
+            raise _range_error(user, item.ballot_no)
+        _must_be_pending(item)
+        item.status, item.decided_by, item.decided_at = CorrectionStatus.WITHDRAWN, user.username, utcnow()
+        audit.record(db, user.id, "correction_withdrawn",
+                     f"Ballot {settings.format_ballot_no(item.ballot_no)}: correction withdrawn by {user.username}")
+        await db.commit()
+        result = await _result(db, item.election_id, item.ballot_no, user)
+    notifier.notify()
+    return result
+
+
+async def _decide(db: AsyncSession, correction_id: int, user: AdminUser, approve: bool) -> DecisionResult:
+    async with _save_lock:
+        item = await _get_correction(db, correction_id)
+        _must_be_pending(item)
+        label = settings.format_ballot_no(item.ballot_no)
+        ballot = (await db.execute(
+            select(Ballot).where(Ballot.id == item.ballot_id).execution_options(populate_existing=True)
+        )).scalar_one_or_none()
+        if not ballot:
+            raise HTTPException(status_code=404, detail=f"Ballot {label} does not exist any more")
+
+        if approve:
+            wanted = json.loads(item.candidate_ids)
+            before = sorted(v.candidate_id for v in ballot.votes)
+            try:
+                await ballot_service.remove_votes(db, ballot)
+                summary = await ballot_service.store_votes(db, ballot, wanted)
+            except ValueError as exc:
+                await db.rollback()
+                raise HTTPException(status_code=400, detail=str(exc))
+            now = utcnow()
+            ballot.status, ballot.reviewed_at = BallotStatus.REVIEWED, now
+            ballot.corrected_by, ballot.approved_by = item.requested_by, user.username
+            item.status, item.decided_by, item.decided_at = CorrectionStatus.APPROVED, user.username, now
+            audit.record(
+                db, user.id, "correction_approved",
+                f"Ballot {label}: correction by {item.requested_by} approved by {user.username}; "
+                f"marked before {json.dumps(before)}, now {json.dumps(sorted(wanted))}; "
+                f"{summary['counted']} vote(s) counted, {summary['null_marks']} null mark(s)",
+            )
+        else:
+            item.status, item.decided_by, item.decided_at = CorrectionStatus.REJECTED, user.username, utcnow()
+            audit.record(db, user.id, "correction_rejected",
+                         f"Ballot {label}: correction by {item.requested_by} rejected by {user.username}; the ballot is unchanged")
+        await db.commit()
+
+        positions, candidates = await ballot_service.layout(db, item.election_id)
+        ballot = (await db.execute(
+            select(Ballot).where(Ballot.id == item.ballot_id).execution_options(populate_existing=True)
+        )).scalar_one()
+        result = DecisionResult(correction=_correction(item, positions, candidates), ballot=_entry_ballot(ballot, positions))
+    notifier.notify()  # an approved correction changes the totals: dashboard and reports follow
+    return result
+
+
+@router.post("/corrections/{correction_id}/approve", response_model=DecisionResult)
+async def approve_correction(correction_id: int, db: AsyncSession = Depends(get_db), user: AdminUser = Depends(get_admin_user)):
+    """Super Admin / Admin: apply the correction to the ballot; the totals change now."""
+    return await _decide(db, correction_id, user, approve=True)
+
+
+@router.post("/corrections/{correction_id}/reject", response_model=DecisionResult)
+async def reject_correction(correction_id: int, db: AsyncSession = Depends(get_db), user: AdminUser = Depends(get_admin_user)):
+    """Super Admin / Admin: refuse the correction; the ballot stays as it was saved."""
+    return await _decide(db, correction_id, user, approve=False)

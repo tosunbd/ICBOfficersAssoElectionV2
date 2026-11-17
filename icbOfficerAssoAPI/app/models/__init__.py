@@ -5,6 +5,7 @@ from app.models.ballot import Ballot
 from app.models.vote import Vote
 from app.models.admin_user import AdminUser
 from app.models.audit_log import AuditLog
+from app.models.ballot_correction import BallotCorrection
 
 __all__ = [
     "Election",
@@ -14,4 +15,5 @@ __all__ = [
     "Vote",
     "AdminUser",
     "AuditLog",
+    "BallotCorrection",
 ]

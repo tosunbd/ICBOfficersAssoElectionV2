@@ -32,6 +32,26 @@ class NullPost(BaseModel):
     allowed: int
 
 
+class Correction(BaseModel):
+    """A change to a saved ballot, kept apart until the Super Admin or the Admin decides on it."""
+
+    id: int
+    ballot_id: int
+    ballot_no: int
+    label: str
+    status: str                        # pending | approved | rejected | withdrawn
+    requested_by: str
+    requested_at: datetime
+    decided_by: str | None
+    decided_at: datetime | None
+    candidate_ids: list[int]           # the boxes as they should be
+    previous_candidate_ids: list[int]  # the boxes saved when the request was made
+    counted: int                       # votes that would count after the correction
+    null_marks: int
+    previous_counted: int
+    previous_null_marks: int
+
+
 class EntryBallot(BaseModel):
     """One saved ballot exactly as entered."""
 
@@ -43,11 +63,13 @@ class EntryBallot(BaseModel):
     entered_at: datetime | None
     corrected_by: str | None
     corrected_at: datetime | None
+    approved_by: str | None = None
     candidate_ids: list[int]         # every box marked on the paper
     null_candidate_ids: list[int]    # marked, but not counted (null vote)
     counted: int                     # votes that count
     null_marks: int
     null_posts: list[NullPost]
+    pending: Correction | None = None  # a correction of this ballot is waiting for approval
 
 
 class DeskDraft(BaseModel):
@@ -74,6 +96,7 @@ class Desk(BaseModel):
     last_ballot_no: int | None
     last_label: str | None
     last_saved_at: datetime | None
+    pending_corrections: int = 0     # corrections of this desk waiting for approval
 
 
 class EntryElection(BaseModel):
@@ -93,9 +116,15 @@ class EntryState(BaseModel):
     me: str | None                   # the caller's desk (username) when the caller is an Election Commissioner
     total_entered: int
     total_ballots: int               # papers in all ranges together
+    pending_corrections: int = 0     # corrections waiting for the Super Admin / Admin
     server_time: datetime
 
 
 class SaveResult(BaseModel):
     ballot: EntryBallot
     desk: Desk
+
+
+class DecisionResult(BaseModel):
+    correction: Correction
+    ballot: EntryBallot

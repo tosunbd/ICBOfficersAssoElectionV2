@@ -164,22 +164,105 @@ async def test_unknown_candidate_is_refused_and_nothing_is_saved(client, login, 
 
 
 # ------------------------------------------------- corrections and deletion
-async def test_a_commissioner_can_correct_an_own_ballot(client, login, election, ids):
-    ec1, ec2, admin = await login("EC1"), await login("EC2"), await login("Admin")
-    await enter(client, ec1, 1, ids("13", "12"))                      # typing mistake: null vote
+async def test_a_blank_ballot_is_counted_with_no_votes(client, login, election, ids):
+    """A voter who votes for nobody: the paper is a counted ballot, no candidate gets a vote."""
+    ec1, admin = await login("EC1"), await login("Admin")
+    saved = await enter(client, ec1, 1, [])
+    assert saved["ballot"]["counted"] == 0 and saved["ballot"]["null_marks"] == 0 and saved["ballot"]["candidate_ids"] == []
+    assert saved["desk"]["next_label"] == "002" and saved["desk"]["entered"] == 1
+    await enter(client, ec1, 2, ids("13"))
+    data = (await client.get(f"/api/dashboard/results/{election['id']}", headers=admin)).json()
+    assert data["stats"]["counted_ballots"] == 2                     # the blank paper is a ballot
+    assert sum(c["vote_count"] for p in data["positions"] for c in p["candidates"]) == 1
+    report = (await client.get(f"/api/reports/{election['id']}", headers=admin)).json()
+    assert [(b["ballot_paper_no"], b["candidate_ids"]) for b in report["ballots"]] == [("001", []), ("002", ids("13"))]
+    assert report["stats"]["counted_ballots"] == 2 and report["total_votes"] == 1
+
+
+async def test_a_correction_counts_only_after_approval(client, login, election, ids):
+    ec1, ec2, admin, sa = await login("EC1"), await login("EC2"), await login("Admin"), await login("SA")
+    await enter(client, ec1, 1, ids("13", "12"))                      # wrong entry: null vote for President
+
+    # the desk asks for a correction: kept apart, nothing changes yet
     response = await client.put("/api/entry/ballots/1", headers=ec1, json={"candidate_ids": ids("13")})
     assert response.status_code == 200, response.text
-    ballot = response.json()["ballot"]
-    assert ballot["status"] == "reviewed" and ballot["corrected_by"] == "EC1" and ballot["counted"] == 1
+    body = response.json()
+    assert body["ballot"]["status"] == "processed" and body["ballot"]["candidate_ids"] == sorted(ids("13", "12"))
+    pending = body["ballot"]["pending"]
+    assert pending["status"] == "pending" and pending["requested_by"] == "EC1" and pending["candidate_ids"] == ids("13")
+    assert (pending["previous_counted"], pending["previous_null_marks"], pending["counted"], pending["null_marks"]) == (0, 2, 1, 0)
+    assert body["desk"]["pending_corrections"] == 1
+    assert (await votes(client, admin, election["id"]))["13"] == 0   # dashboard and totals: unchanged
+    report = (await client.get(f"/api/reports/{election['id']}", headers=admin)).json()
+    assert report["total_votes"] == 0 and report["manual_ballots"] == 0
+
+    # the Super Admin and the Admin see it waiting; a commissioner cannot approve, not even the own one
+    state = (await client.get("/api/entry/state", headers=admin)).json()
+    assert state["pending_corrections"] == 1
+    waiting = (await client.get("/api/entry/corrections", headers=sa)).json()
+    assert [(c["label"], c["requested_by"]) for c in waiting] == [("001", "EC1")]
+    assert (await client.get("/api/entry/corrections", headers=ec2)).json() == []  # not EC2's range
+    for headers in (ec1, ec2):
+        assert (await client.post(f"/api/entry/corrections/{pending['id']}/approve", headers=headers)).status_code == 403
+
+    # approval: now the ballot and the totals change
+    response = await client.post(f"/api/entry/corrections/{pending['id']}/approve", headers=admin)
+    assert response.status_code == 200, response.text
+    decided = response.json()
+    assert decided["correction"]["status"] == "approved" and decided["correction"]["decided_by"] == "Admin"
+    ballot = decided["ballot"]
+    assert ballot["status"] == "reviewed" and ballot["corrected_by"] == "EC1" and ballot["approved_by"] == "Admin"
+    assert ballot["candidate_ids"] == ids("13") and ballot["counted"] == 1 and ballot["pending"] is None
     counted = await votes(client, admin, election["id"])
     assert counted["13"] == 1 and counted["12"] == 0
-    # not somebody else's ballot, not by an admin, not a paper that does not exist yet
+    report = (await client.get(f"/api/reports/{election['id']}", headers=admin)).json()
+    assert report["total_votes"] == 1 and report["manual_ballots"] == 1
+    assert (await client.get("/api/entry/state", headers=admin)).json()["pending_corrections"] == 0
+    # a decision is final
+    assert (await client.post(f"/api/entry/corrections/{pending['id']}/reject", headers=sa)).status_code == 409
+
+    # not somebody else's ballot, not by an admin, not a paper that does not exist yet, not "no change"
     assert (await client.put("/api/entry/ballots/1", headers=ec2, json={"candidate_ids": []})).status_code == 403
     assert (await client.put("/api/entry/ballots/1", headers=admin, json={"candidate_ids": []})).status_code == 403
     assert (await client.put("/api/entry/ballots/2", headers=ec1, json={"candidate_ids": []})).status_code == 404
+    assert (await client.put("/api/entry/ballots/1", headers=ec1, json={"candidate_ids": ids("13")})).status_code == 400
     # everybody may look at it; a commissioner only inside the own range
     assert (await client.get("/api/entry/ballots/1", headers=admin)).json()["candidate_ids"] == ids("13")
     assert (await client.get("/api/entry/ballots/1", headers=ec2)).status_code == 403
+
+
+async def test_a_rejected_or_withdrawn_correction_changes_nothing(client, login, election, ids):
+    ec1, sa, admin = await login("EC1"), await login("SA"), await login("Admin")
+    await enter(client, ec1, 1, ids("13"))
+    first = (await client.put("/api/entry/ballots/1", headers=ec1, json={"candidate_ids": ids("12")})).json()["ballot"]["pending"]
+    # asking again replaces the waiting request instead of adding a second one
+    second = (await client.put("/api/entry/ballots/1", headers=ec1, json={"candidate_ids": ids("12", "30")})).json()["ballot"]["pending"]
+    assert second["id"] == first["id"] and second["candidate_ids"] == sorted(ids("12", "30"))
+    assert len((await client.get("/api/entry/corrections", headers=sa)).json()) == 1
+
+    response = await client.post(f"/api/entry/corrections/{second['id']}/reject", headers=sa)
+    assert response.status_code == 200 and response.json()["correction"]["status"] == "rejected"
+    ballot = response.json()["ballot"]
+    assert ballot["status"] == "processed" and ballot["candidate_ids"] == ids("13") and ballot["pending"] is None
+    counted = await votes(client, admin, election["id"])
+    assert (counted["13"], counted["12"], counted["30"]) == (1, 0, 0)
+
+    # withdrawn by the desk before anybody decided
+    third = (await client.put("/api/entry/ballots/1", headers=ec1, json={"candidate_ids": []})).json()["ballot"]["pending"]
+    assert third["id"] != second["id"]
+    assert (await client.delete(f"/api/entry/corrections/{third['id']}", headers=admin)).status_code == 403
+    response = await client.delete(f"/api/entry/corrections/{third['id']}", headers=ec1)
+    assert response.status_code == 200 and response.json()["ballot"]["pending"] is None and response.json()["desk"]["pending_corrections"] == 0
+    assert (await client.post(f"/api/entry/corrections/{third['id']}/approve", headers=sa)).status_code == 409
+    assert (await votes(client, admin, election["id"]))["13"] == 1
+    history = (await client.get("/api/entry/corrections?status=all", headers=sa)).json()
+    assert sorted(c["status"] for c in history) == ["rejected", "withdrawn"]
+
+    # a deleted ballot takes its waiting correction with it
+    fourth = (await client.put("/api/entry/ballots/1", headers=ec1, json={"candidate_ids": ids("12")})).json()["ballot"]
+    assert (await client.delete(f"/api/ballots/{fourth['ballot_id']}", headers=sa)).status_code == 204
+    assert (await client.get("/api/entry/corrections", headers=sa)).json() == []
+    assert (await client.post(f"/api/entry/corrections/{fourth['pending']['id']}/approve", headers=sa)).status_code == 404
 
 
 async def test_a_deleted_ballot_is_the_next_one_to_enter_again(client, login, election, ids):

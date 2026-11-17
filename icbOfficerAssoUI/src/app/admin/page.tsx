@@ -132,6 +132,13 @@ export default function OverviewPage() {
           Change the status under <Link href="/admin/elections">Elections</Link>.
         </Alert>
       )}
+      {entry && entry.pending_corrections > 0 && (
+        <Alert type="warning">
+          <strong>{entry.pending_corrections} ballot correction{entry.pending_corrections === 1 ? "" : "s"} await{entry.pending_corrections === 1 ? "s" : ""} approval.</strong>{" "}
+          The desks asked to change saved ballots; nothing is counted from them until you decide.{" "}
+          <Link href="/admin/entry">Review and approve</Link>
+        </Alert>
+      )}
       {election.counting_paused && <Alert type="warning"><strong>Counting is paused.</strong> The entry desks cannot save until START is pressed on the dashboard.</Alert>}
 
       <div className="mb-6">
@@ -186,7 +193,7 @@ export default function OverviewPage() {
                     <div className="timeline-body">
                       <div className="timeline-title">
                         Ballot <span className="chip-no">{b.ballot_paper_no ?? b.id}</span>
-                        <span className="text-faint text-xs" style={{ fontWeight: 600 }}>{b.status === "reviewed" ? "Corrected" : "Entered"} by {b.corrected_by ?? b.entered_by ?? "—"}</span>
+                        <span className="text-faint text-xs" style={{ fontWeight: 600 }}>{b.status === "reviewed" ? `Corrected by ${b.corrected_by ?? "—"}, approved by ${b.approved_by ?? "—"}` : `Entered by ${b.entered_by ?? "—"}`}{b.boxes_detected === 0 ? " · blank ballot" : ""}</span>
                       </div>
                       <div className="timeline-meta">{formatDateTime(b.reviewed_at ?? b.processed_at ?? b.scanned_at)}{nulls > 0 ? ` · ${nulls} null mark${nulls === 1 ? "" : "s"}` : ""}</div>
                     </div>

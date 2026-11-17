@@ -50,6 +50,7 @@ class Ballot(Base):
     entered_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("admin_users.id"), nullable=True)
     entered_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
     corrected_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(100), nullable=True)  # SA / Admin who approved the correction
     scanned_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)          # when it was entered
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)   # when it was corrected

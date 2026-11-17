@@ -5,11 +5,11 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormE
 import { useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { errorMessage, formatDateTime } from "@/lib/format";
-import type { Candidate, Desk, EntryBallot, EntryState, Position } from "@/lib/types";
+import type { Candidate, Correction, Desk, EntryBallot, EntryState, Position } from "@/lib/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useLoader } from "@/hooks/useLoader";
 import { useToast } from "@/components/ui/Toast";
-import { Modal } from "@/components/ui/Modal";
+import { ConfirmDialog, Modal } from "@/components/ui/Modal";
 import { Alert, CardHead, EmptyState, PageHeader, Spinner } from "@/components/ui/Basics";
 import { Icon } from "@/components/ui/Icon";
 import { BallotPaper, buildRows, checkBallot, sideIds, type Side } from "@/components/entry/BallotPaper";
@@ -62,6 +62,9 @@ function shortTime(value: string | null): string {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+const sameIds = (a: Iterable<number>, b: Iterable<number>) =>
+  Array.from(a).sort((x, y) => x - y).join(",") === Array.from(b).sort((x, y) => x - y).join(",");
+
 /** What the rules made of the ballot on the paper. */
 function TallyCard({ check }: { check: ReturnType<typeof checkBallot> }) {
   return (
@@ -96,6 +99,7 @@ function RecentList({ ballots, activeNo, onPick, empty, showDesk }: {
           <span className="entry-recent-no">{b.label}</span>
           <span className="entry-recent-meta">
             {showDesk && b.entered_by ? `${b.entered_by} · ` : ""}{shortTime(b.corrected_at ?? b.entered_at)}{b.status === "reviewed" ? " · corrected" : ""}
+            {b.pending && <em className="entry-wait"> · correction awaits approval</em>}
           </span>
           <span className="entry-recent-votes">{b.counted} vote{b.counted === 1 ? "" : "s"}{b.null_marks > 0 && <em> · {b.null_marks} null</em>}</span>
           <Icon name="chevronRight" size={14} className="text-faint" />
@@ -159,8 +163,17 @@ function EntryDesk() {
     } catch { /* the list is a convenience */ }
   }, [token]);
 
+  const [myCorrections, setMyCorrections] = useState<Correction[]>([]);
+  const loadCorrections = useCallback(async () => {
+    if (!token) return;
+    try {
+      setMyCorrections((await api.entry.corrections(token, "all")).slice(0, 6));
+    } catch { /* the next refresh tries again */ }
+  }, [token]);
+
   useLoader(loadState, 4000);
-  useLoader(loadRecent);
+  useLoader(loadRecent, 5000);       // also shows when the SA / Admin has decided on a correction
+  useLoader(loadCorrections, 5000);
 
   // what is ticked right now: kept for a refresh, and shown live to the SA / Admin
   const selectedKey = useMemo(() => Array.from(selected).sort((a, b) => a - b).join(","), [selected]);
@@ -208,10 +221,11 @@ function EntryDesk() {
       const ids = Array.from(selected);
       const result = editing ? await api.entry.correct(token, editing.ballot_no, ids) : await api.entry.save(token, currentNo, ids);
       const b = result.ballot;
-      toast.success(
-        `Ballot ${b.label} ${editing ? "corrected" : "saved"}: ${b.counted} vote${b.counted === 1 ? "" : "s"} counted` +
-        (b.null_marks ? `, ${b.null_marks} null mark${b.null_marks === 1 ? "" : "s"}` : ""),
-      );
+      toast.success(editing
+        ? `Correction of ballot ${b.label} sent for approval. The totals change when the SA or the Admin approves it.`
+        : `Ballot ${b.label} saved: ${b.counted} vote${b.counted === 1 ? "" : "s"} counted` +
+          (b.null_marks ? `, ${b.null_marks} null mark${b.null_marks === 1 ? "" : "s"}` : "") +
+          (b.candidate_ids.length === 0 ? " (blank ballot)" : ""));
       setSelected(new Set());
       setEditing(null);
       try { sessionStorage.removeItem(draftKey(username)); } catch { /* ignore */ }
@@ -219,6 +233,7 @@ function EntryDesk() {
       window.scrollTo({ top: 0, behavior: "smooth" });
       void loadRecent();
       void loadState();
+      void loadCorrections();
     } catch (err) {
       toast.error(errorMessage(err));
       if (err instanceof ApiError && (err.status === 409 || err.status === 404)) void loadState();
@@ -249,8 +264,28 @@ function EntryDesk() {
 
   const startEdit = (ballot: EntryBallot) => {
     setEditing(ballot);
-    setSelected(new Set(ballot.candidate_ids));
+    // a correction that is already waiting is shown as it was sent, so it can be changed again
+    setSelected(new Set(ballot.pending ? ballot.pending.candidate_ids : ballot.candidate_ids));
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const withdraw = async () => {
+    if (!token || !editing?.pending) return;
+    setBusy(true);
+    try {
+      await api.entry.withdraw(token, editing.pending.id);
+      toast.success(`Correction of ballot ${editing.label} withdrawn. The ballot stays as it was saved.`);
+      setEditing(null);
+      setSelected(new Set());
+    } catch (err) {
+      toast.error(errorMessage(err));
+      if (err instanceof ApiError && err.status === 409) { setEditing(null); setSelected(new Set()); }  // already decided meanwhile
+    } finally {
+      setBusy(false);
+      void loadRecent();
+      void loadState();
+      void loadCorrections();
+    }
   };
 
   const cancelEdit = () => {
@@ -279,7 +314,8 @@ function EntryDesk() {
   }
 
   const done = desk.next_ballot_no === null;
-  const edited = editing !== null && Array.from(selected).sort((a, b) => a - b).join(",") !== [...editing.candidate_ids].sort((a, b) => a - b).join(",");
+  // a correction can be sent when the ticks differ from the saved ballot and from a request that is already waiting
+  const edited = editing !== null && !sameIds(selected, editing.candidate_ids) && !(editing.pending && sameIds(selected, editing.pending.candidate_ids));
 
   return (
     <div className="page">
@@ -295,9 +331,15 @@ function EntryDesk() {
           {editing && (
             <div className="entry-banner is-edit">
               <Icon name="edit" size={20} />
-              <div className="flex-1">Correcting ballot {editing.label}
-                <small>Saved {formatDateTime(editing.corrected_at ?? editing.entered_at)}. Change the ticks and save the correction, or go back.</small>
+              <div className="flex-1">Correcting ballot {editing.label}{editing.pending ? " · a correction is waiting for approval" : ""}
+                <small>
+                  {editing.pending
+                    ? `Sent ${formatDateTime(editing.pending.requested_at)}. The form shows the correction as it was sent; change it and send it again, or withdraw it.`
+                    : `Saved ${formatDateTime(editing.corrected_at ?? editing.entered_at)}. Change the ticks and send the correction.`}
+                  {" "}The ballot and the totals stay as they are until the SA or the Admin approves.
+                </small>
               </div>
+              {editing.pending && <button className="btn btn-danger-ghost btn-sm" onClick={withdraw} disabled={busy}><Icon name="x" size={14} /> Withdraw</button>}
               <button className="btn btn-ghost btn-sm" onClick={cancelEdit} disabled={busy}><Icon name="undo" size={14} /> Back to {done ? "the desk" : `ballot ${desk.next_label}`}</button>
             </div>
           )}
@@ -343,23 +385,43 @@ function EntryDesk() {
               <div className="entry-actions">
                 <button className="btn btn-success btn-lg entry-save" onClick={requestSave} disabled={busy || !ready || paused || (editing !== null && !edited)}>
                   {busy ? <><span className="btn-spinner" /> Saving…</>
-                    : editing ? <><Icon name="save" size={18} /> Save correction</>
+                    : editing ? <><Icon name="shield" size={18} /> Send for approval</>
                     : <><Icon name="save" size={18} /> Save &amp; next ballot</>}
                 </button>
-                <button className="btn btn-ghost" onClick={() => setSelected(new Set(editing ? editing.candidate_ids : []))} disabled={busy || (editing ? !edited : selected.size === 0)}>
+                <button className="btn btn-ghost" onClick={() => setSelected(new Set(editing ? editing.candidate_ids : []))} disabled={busy || (editing ? sameIds(selected, editing.candidate_ids) : selected.size === 0)}>
                   <Icon name="undo" size={15} /> {editing ? "Reset to the saved ticks" : "Clear the form"}
                 </button>
               </div>
               <p className="entry-hint">
-                <kbd>Ctrl</kbd> + <kbd>Enter</kbd> saves. Several boxes of one post may be ticked, as on the paper: a post with more marks than allowed
+                <kbd>Ctrl</kbd> + <kbd>Enter</kbd> saves. A paper with no mark is saved as a blank ballot: it is counted, with no vote for anyone.
+                Several boxes of one post may be ticked, as on the paper: a post with more marks than allowed
                 (1, or 3 for <span className="text-bengali">নির্বাহী সদস্য</span>) becomes a null vote.
+                {editing && " A correction counts only after the SA or the Admin approves it."}
               </p>
             </div>
           )}
 
           <div className="card">
-            <CardHead icon="scroll" title="Your saved ballots" subtitle="Click one to check or correct it" />
+            <CardHead icon="scroll" title="Your saved ballots" subtitle="Click one to check it or to ask for a correction">
+              {desk.pending_corrections > 0 && <span className="badge badge-warning">{desk.pending_corrections} awaiting approval</span>}
+            </CardHead>
             <RecentList ballots={recent} activeNo={editing?.ballot_no ?? null} onPick={startEdit} empty="Nothing saved yet." />
+            {myCorrections.length > 0 && (
+              <div className="entry-corrections">
+                <div className="entry-now-label" style={{ margin: "14px 0 6px" }}>Your corrections</div>
+                {myCorrections.map((c) => (
+                  <div key={c.id} className="entry-correction-row">
+                    <span className="entry-recent-no">{c.label}</span>
+                    <span className="entry-recent-meta">
+                      {c.status === "pending" ? `sent ${shortTime(c.requested_at)}` : `${c.status === "withdrawn" ? "by you" : `by ${c.decided_by ?? "—"}`} ${shortTime(c.decided_at)}`}
+                    </span>
+                    <span className={`badge ${c.status === "approved" ? "badge-success" : c.status === "rejected" ? "badge-error" : c.status === "pending" ? "badge-warning" : "badge-muted"}`}>
+                      {c.status === "pending" ? "awaiting approval" : c.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             <form className="entry-find" onSubmit={find} style={{ marginTop: 12 }}>
               <input className="input input-sm" inputMode="numeric" placeholder="Open ballot no." value={findNo} onChange={(e) => setFindNo(e.target.value.replace(/\D/g, ""))} aria-label="Ballot number to open" />
               <button className="btn btn-ghost btn-sm" type="submit" disabled={!findNo}><Icon name="search" size={14} /> Open</button>
@@ -381,19 +443,19 @@ function EntryDesk() {
         </aside>
       </div>
 
-      <Modal open={confirm !== null} title={confirm === "blank" ? `Save ballot ${currentLabel} as blank?` : `Ballot ${currentLabel} has null votes`} onClose={() => setConfirm(null)}
+      <Modal open={confirm !== null} title={confirm === "blank" ? `${editing ? "Correct" : "Save"} ballot ${currentLabel} as a blank ballot?` : `Ballot ${currentLabel} has null votes`} onClose={() => setConfirm(null)}
         footer={
           <>
             <button className="btn btn-ghost" onClick={() => setConfirm(null)} disabled={busy}>Go back and check</button>
             <button className="btn btn-primary" onClick={() => void save()} disabled={busy} autoFocus>
-              <Icon name="save" size={16} /> Yes, save it <span className="entry-kbd" style={{ marginLeft: 6 }}>Enter</span>
+              <Icon name="save" size={16} /> {editing ? "Yes, send it for approval" : "Yes, save it"} <span className="entry-kbd" style={{ marginLeft: 6 }}>Enter</span>
             </button>
           </>
         }>
         {confirm === "blank" ? (
           <div className="confirm-body">
             <span className="confirm-icon"><Icon name="info" size={22} /></span>
-            <p style={{ paddingTop: 10 }}>No box is ticked. The ballot will be saved with <strong>no votes</strong>. Save it only if the paper really is blank.</p>
+            <p style={{ paddingTop: 10 }}>No box is ticked: the voter did not vote for anyone. The ballot is <strong>counted as a ballot</strong>, with <strong>no vote for any candidate</strong>.</p>
           </div>
         ) : (
           <div>
@@ -428,9 +490,42 @@ function EntryMonitor() {
   const [lastSaved, setLastSaved] = useState<EntryBallot | null>(null); // the selected desk's latest saved ballot
   const [recent, setRecent] = useState<EntryBallot[]>([]);
   const [findNo, setFindNo] = useState("");
+  const [corrections, setCorrections] = useState<Correction[]>([]);
+  const [reviewId, setReviewId] = useState<number | null>(null);         // the correction shown on the paper
+  const [showSaved, setShowSaved] = useState(false);                     // ... as saved instead of as corrected
+  const [decision, setDecision] = useState<{ item: Correction; approve: boolean } | null>(null);
+  const [deciding, setDeciding] = useState(false);
 
   const digits = state?.digits ?? 3;
   const { positions, candidates, rows, ready, error: layoutError } = useBallotLayout(state?.election?.id ?? null);
+
+  const loadCorrections = useCallback(async () => {
+    if (!token) return;
+    try {
+      setCorrections(await api.entry.corrections(token, "pending"));
+    } catch { /* the next refresh tries again */ }
+  }, [token]);
+  useLoader(loadCorrections, 2500);
+
+  const decide = async () => {
+    if (!token || !decision) return;
+    setDeciding(true);
+    try {
+      const result = decision.approve ? await api.entry.approve(token, decision.item.id) : await api.entry.reject(token, decision.item.id);
+      toast.success(decision.approve
+        ? `Ballot ${result.ballot.label} corrected: ${result.ballot.counted} vote${result.ballot.counted === 1 ? "" : "s"} counted now. The dashboard is updated.`
+        : `Correction of ballot ${result.ballot.label} rejected. The ballot stays as it was saved.`);
+      setReviewId(null);
+      setShowSaved(false);
+      setOpened(result.ballot);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setDeciding(false);
+      setDecision(null);
+      void loadCorrections();
+    }
+  };
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -474,7 +569,7 @@ function EntryMonitor() {
   }, [token, lastNo, lastKey]);
 
   // the list of saved ballots follows every save on any desk
-  const savedKey = state ? state.desks.map((d) => `${d.entered}:${d.last_saved_at}`).join("|") : "";
+  const savedKey = state ? state.desks.map((d) => `${d.entered}:${d.last_saved_at}:${d.pending_corrections}`).join("|") : "";
   useEffect(() => {
     if (!token || !savedKey) return;
     api.entry.recent(token, 15).then(setRecent).catch(() => undefined);
@@ -491,14 +586,16 @@ function EntryMonitor() {
     return <EmptyState icon="landmark" title="No election is active"><p>Set the election to <strong>active</strong> under Elections; the Election Commissioners can then enter ballots.</p></EmptyState>;
   }
 
-  // what the paper shows: an opened ballot, else the desk's live ticks, else its last saved ballot
+  // what the paper shows: a correction under review, else an opened ballot, else the desk's live ticks, else its last saved ballot
+  const review = corrections.find((c) => c.id === reviewId) ?? null;
   const draft = desk?.draft ?? null;
-  const saved = opened ?? (!draft && lastSaved && desk && lastSaved.ballot_no === desk.last_ballot_no ? lastSaved : null);
-  const mode: "opened" | "live" | "last" | "idle" = opened ? "opened" : draft ? "live" : saved ? "last" : "idle";
-  const ids = mode === "live" ? draft!.candidate_ids : saved?.candidate_ids ?? [];
+  const saved = review ? null : opened ?? (!draft && lastSaved && desk && lastSaved.ballot_no === desk.last_ballot_no ? lastSaved : null);
+  const mode: "review" | "opened" | "live" | "last" | "idle" = review ? "review" : opened ? "opened" : draft ? "live" : saved ? "last" : "idle";
+  const ids = review ? (showSaved ? review.previous_candidate_ids : review.candidate_ids)
+    : mode === "live" ? draft!.candidate_ids : saved?.candidate_ids ?? [];
   const selected = new Set(ids);
   const check = checkBallot(positions, candidates, selected);
-  const label = mode === "live" ? draft!.label : saved?.label ?? (desk?.next_label ?? "");
+  const label = review ? review.label : mode === "live" ? draft!.label : saved?.label ?? (desk?.next_label ?? "");
   const overall = state.total_ballots ? Math.round((state.total_entered / state.total_ballots) * 1000) / 10 : 0;
 
   return (
@@ -511,12 +608,33 @@ function EntryMonitor() {
       {layoutError && <Alert type="error">{layoutError}</Alert>}
       {state.election.counting_paused && <Alert type="warning"><strong>Counting is paused.</strong> The desks cannot save until START is pressed (Results &amp; Controls, or the live screen).</Alert>}
 
+      {corrections.length > 0 && (
+        <div className="card approval-card mb-6">
+          <CardHead icon="shield" title={<>Corrections awaiting your approval <span className="badge badge-warning" style={{ marginLeft: 6 }}>{corrections.length}</span></>}
+            subtitle="Sent by the entry desks. Nothing is counted from them until you approve; a rejected one leaves the ballot as it was saved." gold />
+          <div className="approval-list">
+            {corrections.map((c) => (
+              <div key={c.id} className={`approval-row ${reviewId === c.id ? "is-active" : ""}`}>
+                <span className="entry-recent-no">{c.label}</span>
+                <div className="approval-info">
+                  <strong>{c.requested_by}</strong> asks to correct ballot {c.label}
+                  <small>{formatDateTime(c.requested_at)} · counted votes {c.previous_counted} → <b>{c.counted}</b> · null marks {c.previous_null_marks} → <b>{c.null_marks}</b> · boxes {c.previous_candidate_ids.length} → <b>{c.candidate_ids.length}</b></small>
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setReviewId(c.id); setShowSaved(false); setOpened(null); }}><Icon name="eye" size={14} /> Compare</button>
+                <button className="btn btn-success btn-sm" onClick={() => setDecision({ item: c, approve: true })}><Icon name="check" size={14} /> Approve</button>
+                <button className="btn btn-danger-ghost btn-sm" onClick={() => setDecision({ item: c, approve: false })}><Icon name="x" size={14} /> Reject</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="desk-grid">
         {state.desks.map((d) => {
           const complete = d.next_ballot_no === null;
           return (
-            <button key={d.username} type="button" className={`desk-card ${desk?.username === d.username && !opened ? "is-selected" : ""}`}
-              onClick={() => { setDeskName(d.username); setOpened(null); }}>
+            <button key={d.username} type="button" className={`desk-card ${desk?.username === d.username && !opened && !review ? "is-selected" : ""}`}
+              onClick={() => { setDeskName(d.username); setOpened(null); setReviewId(null); }}>
               <div className="desk-head">
                 <span className="avatar">{d.username}</span>
                 <div style={{ minWidth: 0 }}>
@@ -531,7 +649,8 @@ function EntryMonitor() {
                 <span>{complete ? "Range finished" : d.draft
                   ? <>{d.draft.editing ? "Correcting" : "On the desk"}: <b>{d.draft.label}</b> · {d.draft.candidate_ids.length} ticked</>
                   : <>Next: <b>{d.next_label}</b></>}</span>
-                <span>{d.last_label ? <>Last saved <b>{d.last_label}</b> {shortTime(d.last_saved_at)}</> : "Nothing saved yet"}</span>
+                <span>{d.pending_corrections > 0 ? <em className="entry-wait">{d.pending_corrections} correction{d.pending_corrections === 1 ? "" : "s"} to approve</em>
+                  : d.last_label ? <>Last saved <b>{d.last_label}</b> {shortTime(d.last_saved_at)}</> : "Nothing saved yet"}</span>
               </div>
             </button>
           );
@@ -540,11 +659,26 @@ function EntryMonitor() {
 
       <div className="entry-layout">
         <div className="entry-paper-col">
+          {review && (
+            <div className="entry-banner is-edit">
+              <Icon name="shield" size={20} />
+              <div className="flex-1">Correction of ballot {review.label} by {review.requested_by} · {showSaved ? "as it is saved now" : "as it would be after approval"}
+                <small>Counted votes {review.previous_counted} → {review.counted} · null marks {review.previous_null_marks} → {review.null_marks}. Compare both, then approve or reject.</small>
+              </div>
+              <div className="segmented" role="tablist">
+                <button role="tab" aria-selected={showSaved} className={showSaved ? "active" : ""} onClick={() => setShowSaved(true)}>Saved</button>
+                <button role="tab" aria-selected={!showSaved} className={!showSaved ? "active" : ""} onClick={() => setShowSaved(false)}>Corrected</button>
+              </div>
+              <button className="btn btn-success btn-sm" onClick={() => setDecision({ item: review, approve: true })}><Icon name="check" size={14} /> Approve</button>
+              <button className="btn btn-danger-ghost btn-sm" onClick={() => setDecision({ item: review, approve: false })}><Icon name="x" size={14} /> Reject</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setReviewId(null)} aria-label="Close"><Icon name="x" size={14} /></button>
+            </div>
+          )}
           {mode === "opened" && saved && (
             <div className="entry-banner is-view">
               <Icon name="eye" size={20} />
               <div className="flex-1">Ballot {saved.label} · saved by {saved.entered_by ?? "—"}
-                <small>{formatDateTime(saved.entered_at)}{saved.corrected_at ? ` · corrected by ${saved.corrected_by ?? "—"} ${formatDateTime(saved.corrected_at)}` : ""}</small>
+                <small>{formatDateTime(saved.entered_at)}{saved.corrected_at ? ` · corrected by ${saved.corrected_by ?? "—"}, approved by ${saved.approved_by ?? "—"} ${formatDateTime(saved.corrected_at)}` : ""}{saved.pending ? " · a correction is waiting for approval" : ""}</small>
               </div>
               <button className="btn btn-ghost btn-sm" onClick={() => setOpened(null)}><Icon name="activity" size={14} /> Back to live</button>
             </div>
@@ -578,15 +712,16 @@ function EntryMonitor() {
               titleBn={state.election.title_bn ?? FALLBACK_TITLE}
               ballotLabel={label}
               rows={rows} selected={selected} nullIds={check.nullIds} readOnly
-              stamp={mode === "opened" || mode === "last" ? (saved?.status === "reviewed" ? "Corrected" : "Saved") : undefined}
-              flashKey={`${mode}-${label}`}
+              stamp={mode === "review" ? (showSaved ? "Saved" : "Proposed") : mode === "opened" || mode === "last" ? (saved?.status === "reviewed" ? "Corrected" : "Saved") : undefined}
+              flashKey={`${mode}-${label}-${showSaved}`}
             />
           )}
         </div>
 
         <aside className="entry-side">
           <div className="card card-gold">
-            <CardHead icon="vote" title={mode === "live" ? `Ballot ${label} · live` : label ? `Ballot ${label}` : "Ballot"} subtitle={mode === "live" ? "Not saved yet" : mode === "idle" ? "Nothing to show yet" : "As saved"} gold />
+            <CardHead icon="vote" title={mode === "live" ? `Ballot ${label} · live` : label ? `Ballot ${label}` : "Ballot"}
+              subtitle={mode === "review" ? (showSaved ? "As saved now" : "As it would be after approval") : mode === "live" ? "Not saved yet" : mode === "idle" ? "Nothing to show yet" : "As saved"} gold />
             <TallyCard check={check} />
           </div>
 
@@ -600,10 +735,19 @@ function EntryMonitor() {
 
           <div className="card">
             <CardHead icon="scroll" title="Latest saved ballots" subtitle="All desks, newest number first" />
-            <RecentList ballots={recent} activeNo={opened?.ballot_no ?? null} onPick={(b) => { setOpened(b); window.scrollTo({ top: 0, behavior: "smooth" }); }} empty="No ballot saved yet." showDesk />
+            <RecentList ballots={recent} activeNo={opened?.ballot_no ?? null} onPick={(b) => { setReviewId(null); setOpened(b); window.scrollTo({ top: 0, behavior: "smooth" }); }} empty="No ballot saved yet." showDesk />
           </div>
         </aside>
       </div>
+
+      <ConfirmDialog open={decision !== null} busy={deciding} danger={decision ? !decision.approve : false}
+        title={decision ? `${decision.approve ? "Approve" : "Reject"} the correction of ballot ${decision.item.label}` : ""}
+        message={decision
+          ? decision.approve
+            ? `Ballot ${decision.item.label} will be changed as ${decision.item.requested_by} asked: counted votes ${decision.item.previous_counted} → ${decision.item.counted}, null marks ${decision.item.previous_null_marks} → ${decision.item.null_marks}. The totals, the dashboard and the reports change at once.`
+            : `The correction ${decision.item.requested_by} sent for ballot ${decision.item.label} is refused. The ballot and the totals stay exactly as they are.`
+          : ""}
+        confirmLabel={decision?.approve ? "Approve" : "Reject"} onConfirm={decide} onCancel={() => setDecision(null)} />
     </div>
   );
 }

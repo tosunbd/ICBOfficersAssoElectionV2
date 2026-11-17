@@ -40,6 +40,18 @@ class BallotService:
         candidates = {c.id: c for p in positions for c in p.candidates}
         return list(positions), candidates
 
+    @staticmethod
+    def preview(positions: list[Position], candidates: dict[int, Candidate], candidate_ids: list[int]) -> tuple[int, int]:
+        """(votes that count, null marks) the rules give for these ticked boxes, without storing anything."""
+        per_post: dict[int, int] = {}
+        for candidate_id in set(candidate_ids):
+            candidate = candidates.get(candidate_id)
+            if candidate is not None:
+                per_post[candidate.position_id] = per_post.get(candidate.position_id, 0) + 1
+        allowed = {p.id: p.max_selections for p in positions}
+        counted = sum(n for post, n in per_post.items() if n <= allowed.get(post, 1))
+        return counted, sum(per_post.values()) - counted
+
     async def store_votes(self, db: AsyncSession, ballot: Ballot, candidate_ids: list[int]) -> dict:
         """Insert the votes of `ballot` for the marked boxes and apply the rules.
 

@@ -193,3 +193,19 @@
 
 .entry-find { display: flex; gap: 8px; }
 .entry-find .input { flex: 1; min-width: 0; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+/* ---------- corrections waiting for approval ---------- */
+.entry-wait { font-style: normal; font-weight: 700; color: var(--color-warning-text); }
+.approval-card { border-color: rgba(245, 158, 11, 0.45); }
+.approval-list { display: flex; flex-direction: column; gap: 8px; }
+.approval-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--color-border-subtle); background: var(--color-bg-subtle);
+}
+.approval-row.is-active { border-color: rgba(245, 158, 11, 0.6); background: var(--color-warning-soft); }
+.approval-info { flex: 1; min-width: 220px; font-size: 0.9rem; }
+.approval-info small { display: block; font-size: 0.78rem; color: var(--color-text-secondary); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.approval-info small b { color: var(--color-text-primary); }
+.entry-banner { flex-wrap: wrap; }
+.entry-correction-row { display: flex; align-items: center; gap: 10px; padding: 5px 9px; font-size: 0.8rem; }
+.entry-correction-row .badge { text-transform: capitalize; }

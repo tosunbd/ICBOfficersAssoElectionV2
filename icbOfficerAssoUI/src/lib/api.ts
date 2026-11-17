@@ -14,7 +14,7 @@
 
 import type {
   ActiveElection, AuditLogEntry, BallotDetail, BallotList,
-  Candidate, DashboardData, DatabaseInfo, Election, ElectionDetail, ElectionReport,
+  Candidate, Correction, DashboardData, DatabaseInfo, DecisionResult, Election, ElectionDetail, ElectionReport,
   EntryBallot, EntryState, LoginResponse, Position, SaveResult, SystemStatus, UserAccount,
 } from "./types";
 import { BASE_PATH } from "./basePath";
@@ -144,8 +144,20 @@ export const api = {
     get: (token: string, ballotNo: number) => apiFetch<EntryBallot>(`/api/entry/ballots/${ballotNo}`, { token }),
     save: (token: string, ballot_no: number, candidate_ids: number[]) =>
       apiFetch<SaveResult>("/api/entry/ballots", { method: "POST", token, body: json({ ballot_no, candidate_ids }) }),
+    /** Ask for a correction of a saved ballot: it waits for the SA / Admin and changes nothing until approved. */
     correct: (token: string, ballotNo: number, candidate_ids: number[]) =>
       apiFetch<SaveResult>(`/api/entry/ballots/${ballotNo}`, { method: "PUT", token, body: json({ candidate_ids }) }),
+    corrections: (token: string, status: "pending" | "approved" | "rejected" | "withdrawn" | "all" = "pending") =>
+      apiFetch<Correction[]>(`/api/entry/corrections?status=${status}`, { token }),
+    /** The commissioner takes a waiting correction back. */
+    withdraw: (token: string, correctionId: number) =>
+      apiFetch<SaveResult>(`/api/entry/corrections/${correctionId}`, { method: "DELETE", token }),
+    /** SA / Admin: apply the correction; the totals change now. */
+    approve: (token: string, correctionId: number) =>
+      apiFetch<DecisionResult>(`/api/entry/corrections/${correctionId}/approve`, { method: "POST", token }),
+    /** SA / Admin: refuse the correction; the ballot stays as saved. */
+    reject: (token: string, correctionId: number) =>
+      apiFetch<DecisionResult>(`/api/entry/corrections/${correctionId}/reject`, { method: "POST", token }),
   },
 
   ballots: {

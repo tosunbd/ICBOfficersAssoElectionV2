@@ -7,11 +7,11 @@ for the desk it belongs to).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Ballot
+from app.models import Ballot, BallotCorrection
 from app.models.admin_user import AdminUser
 from app.schemas.ballot import (
     BallotDetailResponse, BallotListResponse, BallotResponse, BulkDeleteRequest, BulkDeleteResponse,
@@ -92,6 +92,7 @@ async def delete_ballot(
 
 async def _delete_ballot(db: AsyncSession, ballot: Ballot, user: AdminUser) -> None:
     await ballot_service.remove_votes(db, ballot)
+    await db.execute(delete(BallotCorrection).where(BallotCorrection.ballot_id == ballot.id))  # its corrections go with it
     audit.record(
         db, user.id, "ballot_delete",
         f"Ballot {ballot.ballot_paper_no or '#' + str(ballot.id)} (entered by {ballot.entered_by or 'unknown'}) deleted by {user.username}",

@@ -14,8 +14,8 @@ SQLite database, and the results, the dashboard and the reports follow at once.
 
 | Username | Password | Role | Does |
 |---|---|---|---|
-| `SA` | `sadmin` | Super Admin | Everything: reports, results, settings, **approve corrections**, delete a ballot, set any password, watch the entry |
-| `Admin` | `admin` | Admin | Reports, results, election set-up, **approve corrections**, watch the entry |
+| `SA` | `sadmin` | Super Admin | Everything: reports, results, settings, **approve corrections**, **edit any ballot**, delete a ballot, set any password, watch the entry |
+| `Admin` | `admin` | Admin | Reports, results, election set-up, **approve corrections**, **edit any ballot**, watch the entry |
 | `EC1` | `EC1` | Election Commissioner 1 | Enters ballots **001 – 150** |
 | `EC2` | `EC2` | Election Commissioner 2 | Enters ballots **151 – 300** |
 | `EC3` | `EC3` | Election Commissioner 3 | Enters ballots **301 – 455** |
@@ -73,6 +73,16 @@ A saved ballot is never changed by the desk itself.
 
 Every request, approval, rejection and withdrawal is written to the audit log.
 
+## Editing a ballot on the admin side
+
+SA and Admin can change any saved ballot of any range (001 to 455) themselves:
+**Ballots** → **Edit**, or open the ballot under **Ballot Entry · Live** and
+press **Edit**. Change the ticks and press **Save changes**. No approval step:
+the totals, the dashboard and the reports change at once, the ballot is marked
+"Corrected" with the name of who edited it, and the before/after ticks are
+written to the audit log. The Election Commissioners do not have this option;
+their corrections still need approval.
+
 ## Pages
 
 | Page | URL | Who |
@@ -82,7 +92,7 @@ Every request, approval, rejection and withdrawal is written to the audit log.
 | Overview, Results, **Reports**, Ballots, Elections, Candidates, Audit log, Settings | `/election/admin/...` | SA, Admin |
 | Dashboard (projector) | `/election/dashboard` | everyone; refreshed every 2 seconds |
 
-The Reports page (Result Summary and Ballot-wise Vote Tally, print / PDF / CSV)
+The Reports page (1 Result Summary, 2 Ballot-wise Vote Tally, 3 Panel Votes with Panel Left / Panel Right, 4 Null Votes; print / PDF / CSV)
 is the same as in the previous system.
 
 ## Running (Windows)
@@ -103,7 +113,7 @@ start together with the users and the election.
 
 ```
 cd icbOfficerAssoAPI
-.venv\Scripts\python -m pytest        # 33 tests: users, ranges, numbering, null-vote rules, blank ballots, approvals, reports
+.venv\Scripts\python -m pytest        # 34 tests: users, ranges, numbering, null-vote rules, blank ballots, approvals, reports
 cd ..\icbOfficerAssoUI
 npm run lint && npm run build
 ```

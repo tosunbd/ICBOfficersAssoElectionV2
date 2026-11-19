@@ -33,8 +33,3 @@ Thumbs.db
 
 # Downloaded runtimes / installers (install.bat)
 tools/
-
-# Local tooling notes
-CLAUDE.md
-AGENTS.md
-.claude/

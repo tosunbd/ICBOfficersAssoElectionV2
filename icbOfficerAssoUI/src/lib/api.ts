@@ -147,6 +147,9 @@ export const api = {
     /** Ask for a correction of a saved ballot: it waits for the SA / Admin and changes nothing until approved. */
     correct: (token: string, ballotNo: number, candidate_ids: number[]) =>
       apiFetch<SaveResult>(`/api/entry/ballots/${ballotNo}`, { method: "PUT", token, body: json({ candidate_ids }) }),
+    /** SA / Admin: change the ticks of any saved ballot directly; the totals change now. */
+    edit: (token: string, ballotNo: number, candidate_ids: number[]) =>
+      apiFetch<EntryBallot>(`/api/entry/ballots/${ballotNo}/edit`, { method: "PUT", token, body: json({ candidate_ids }) }),
     corrections: (token: string, status: "pending" | "approved" | "rejected" | "withdrawn" | "all" = "pending") =>
       apiFetch<Correction[]>(`/api/entry/corrections?status=${status}`, { token }),
     /** The commissioner takes a waiting correction back. */

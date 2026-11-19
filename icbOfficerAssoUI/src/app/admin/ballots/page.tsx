@@ -24,7 +24,7 @@ const FILTERS: Array<{ value: Filter; label: string; color?: string }> = [
 ];
 const PER_PAGE = 25;
 
-/** The register of entered ballots.  Deleting is for the Super Admin. */
+/** The register of entered ballots.  SA and Admin can edit any of them; deleting is for the Super Admin. */
 export default function BallotsPage() {
   const { token, isSuperAdmin } = useAuth();
   const { election } = useElection();
@@ -93,7 +93,7 @@ export default function BallotsPage() {
 
   return (
     <div className="page">
-      <PageHeader eyebrow="Counting" title="Ballots" subtitle="Every ballot saved by EC1, EC2 and EC3. Open one to see it exactly as it was entered."
+      <PageHeader eyebrow="Counting" title="Ballots" subtitle="Every ballot saved by EC1, EC2 and EC3. Open one to see it exactly as it was entered, or edit it."
         actions={<Link href="/admin/entry" className="btn btn-accent"><Icon name="activity" size={16} /> Live entry monitor</Link>} />
 
       <div className="card">
@@ -153,6 +153,7 @@ export default function BallotsPage() {
                       <td className="text-faint text-small" style={{ whiteSpace: "nowrap" }}>{formatDateTime(b.reviewed_at ?? b.processed_at ?? b.scanned_at)}</td>
                       <td className="cell-actions">
                         <Link href={`/admin/entry?ballot=${b.ballot_no ?? ""}`} className="btn btn-sm btn-ghost">View <Icon name="chevronRight" size={14} /></Link>
+                        <Link href={`/admin/entry?ballot=${b.ballot_no ?? ""}&edit=1`} className="btn btn-sm btn-ghost"><Icon name="edit" size={14} /> Edit</Link>
                       </td>
                     </tr>
                   );

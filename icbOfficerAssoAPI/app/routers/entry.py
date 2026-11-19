@@ -9,6 +9,7 @@ database in one transaction and the results and reports change at once.
 
 The Super Admin and the Admin can watch: `GET /state` gives the progress of
 every desk and, while a commissioner is working, the boxes ticked so far.
+They can also edit any saved ballot of any range directly (`PUT /ballots/{no}/edit`).
 """
 
 import asyncio
@@ -389,6 +390,59 @@ async def request_correction(
         live.last_seen, live.draft = utcnow(), None
         result = await _result(db, election.id, ballot_no, user)
     notifier.notify()
+    return result
+
+
+@router.put("/ballots/{ballot_no}/edit", response_model=EntryBallot)
+async def edit_ballot(
+    ballot_no: int, data: CorrectionRequest,
+    db: AsyncSession = Depends(get_db), user: AdminUser = Depends(get_admin_user),
+):
+    """Super Admin / Admin: change the ticks of any saved ballot (every range) directly.
+
+    No approval step: the ballot's votes are replaced and the totals, the
+    dashboard and the reports change at once.  A correction of the same ballot
+    that a desk has waiting stays waiting (compared against the new ticks),
+    unless it asks for exactly what was just saved: then it is done."""
+    label = settings.format_ballot_no(ballot_no)
+    async with _save_lock:
+        election = await _require_election(db)
+        ballot = (await _entered(db, election.id)).get(ballot_no)
+        if not ballot:
+            raise HTTPException(status_code=404, detail=f"Ballot {label} has not been entered yet")
+        wanted = sorted(set(data.candidate_ids))
+        before = sorted(v.candidate_id for v in ballot.votes)
+        if wanted == before:
+            raise HTTPException(status_code=400, detail=f"Ballot {label} is already saved exactly like this: there is nothing to change.")
+        try:
+            await ballot_service.remove_votes(db, ballot)
+            summary = await ballot_service.store_votes(db, ballot, wanted)
+        except ValueError as exc:
+            await db.rollback()
+            raise HTTPException(status_code=400, detail=str(exc))
+        now = utcnow()
+        ballot.status, ballot.reviewed_at = BallotStatus.REVIEWED, now
+        ballot.corrected_by, ballot.approved_by = user.username, None  # edited directly: nobody else approved
+
+        waiting = (await _pending(db, election.id)).get(ballot.id)
+        if waiting:
+            if sorted(json.loads(waiting.candidate_ids)) == wanted:
+                waiting.status, waiting.decided_by, waiting.decided_at = CorrectionStatus.APPROVED, user.username, now
+            else:
+                waiting.previous_candidate_ids = json.dumps(wanted)
+        audit.record(
+            db, user.id, "ballot_edit",
+            f"Ballot {label} (entered by {ballot.entered_by or 'unknown'}) edited by {user.username}; "
+            f"marked before {json.dumps(before)}, now {json.dumps(wanted)}; "
+            f"{summary['counted']} vote(s) counted, {summary['null_marks']} null mark(s)",
+        )
+        await db.commit()
+
+        positions, candidates = await ballot_service.layout(db, election.id)
+        ballot = (await _entered(db, election.id))[ballot_no]
+        waiting = (await _pending(db, election.id)).get(ballot.id)
+        result = _entry_ballot(ballot, positions, _correction(waiting, positions, candidates) if waiting else None)
+    notifier.notify()  # the totals changed: dashboard and reports follow
     return result
 
 

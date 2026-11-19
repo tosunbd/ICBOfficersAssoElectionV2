@@ -265,6 +265,49 @@ async def test_a_rejected_or_withdrawn_correction_changes_nothing(client, login,
     assert (await client.post(f"/api/entry/corrections/{fourth['pending']['id']}/approve", headers=sa)).status_code == 404
 
 
+async def test_admins_edit_any_saved_ballot_directly(client, login, election, ids):
+    ec1, ec3, admin, sa = await login("EC1"), await login("EC3"), await login("Admin"), await login("SA")
+    await enter(client, ec1, 1, ids("13", "12"))                      # null vote for President
+    await enter(client, ec3, 301, ids("30"))
+
+    # the Admin edits a ballot of EC1's range: counted at once, no approval
+    response = await client.put("/api/entry/ballots/1/edit", headers=admin, json={"candidate_ids": ids("13")})
+    assert response.status_code == 200, response.text
+    ballot = response.json()
+    assert ballot["status"] == "reviewed" and ballot["corrected_by"] == "Admin" and ballot["approved_by"] is None
+    assert ballot["candidate_ids"] == ids("13") and (ballot["counted"], ballot["null_marks"]) == (1, 0)
+    counted = await votes(client, admin, election["id"])
+    assert (counted["13"], counted["12"]) == (1, 0)
+
+    # the Super Admin edits one of EC3's range, here to a blank ballot
+    response = await client.put("/api/entry/ballots/301/edit", headers=sa, json={"candidate_ids": []})
+    assert response.status_code == 200 and response.json()["corrected_by"] == "SA" and response.json()["counted"] == 0
+    assert (await votes(client, admin, election["id"]))["30"] == 0
+    report = (await client.get(f"/api/reports/{election['id']}", headers=admin)).json()
+    assert report["total_votes"] == 1 and report["manual_ballots"] == 2
+
+    # only on the admin side; only a saved ballot; a real change; a candidate of this ballot
+    for headers in (ec1, ec3):
+        assert (await client.put("/api/entry/ballots/1/edit", headers=headers, json={"candidate_ids": []})).status_code == 403
+    assert (await client.put("/api/entry/ballots/2/edit", headers=admin, json={"candidate_ids": []})).status_code == 404
+    assert (await client.put("/api/entry/ballots/1/edit", headers=admin, json={"candidate_ids": ids("13")})).status_code == 400
+    assert (await client.put("/api/entry/ballots/1/edit", headers=admin, json={"candidate_ids": [999999]})).status_code == 400
+    assert (await votes(client, admin, election["id"]))["13"] == 1   # the refused edits changed nothing
+    # the desk still enters its next number
+    await enter(client, ec1, 2, ids("12"))
+
+    # a correction the desk has waiting: kept and compared against the new ticks ...
+    pending = (await client.put("/api/entry/ballots/1", headers=ec1, json={"candidate_ids": ids("12")})).json()["ballot"]["pending"]
+    ballot = (await client.put("/api/entry/ballots/1/edit", headers=sa, json={"candidate_ids": ids("13", "30")})).json()
+    assert ballot["pending"]["id"] == pending["id"] and ballot["pending"]["previous_candidate_ids"] == sorted(ids("13", "30"))
+    # ... and done when the edit saves exactly what it asked for
+    ballot = (await client.put("/api/entry/ballots/1/edit", headers=admin, json={"candidate_ids": ids("12")})).json()
+    assert ballot["pending"] is None and ballot["candidate_ids"] == ids("12")
+    assert (await client.get("/api/entry/corrections", headers=sa)).json() == []
+    counted = await votes(client, admin, election["id"])
+    assert (counted["13"], counted["12"], counted["30"]) == (0, 2, 0)
+
+
 async def test_a_deleted_ballot_is_the_next_one_to_enter_again(client, login, election, ids):
     ec1, sa = await login("EC1"), await login("SA")
     for number in (1, 2, 3):
@@ -319,6 +362,17 @@ async def test_report_follows_every_saved_ballot(client, login, election, ids):
     assert executive["20"] == (1, "elected") and executive["237"] == (0, "")
     # the tally rows are the same votes
     assert sum(len(b["candidate_ids"]) for b in report["ballots"]) == report["total_votes"]
+    # Panel Votes: the side of the paper every candidate is printed on
+    panel = {c["voter_no"]: c["panel"] for p in report["positions"] for c in p["candidates"]}
+    assert all(panel[v] == "left" for v in LEFT_COLUMN) and all(panel[v] == "right" for v in RIGHT_COLUMN)
+    # Null Votes: every mark that is not counted, with the reason
+    by_voter = {c["voter_no"]: c["candidate_id"] for p in report["positions"] for c in p["candidates"]}
+    first, second, third = report["ballots"]
+    assert {v["candidate_id"] for v in first["void"]} == {by_voter[v] for v in ("20", "76", "33", "237")}
+    assert all(v["reason"] == "Null vote: 4 marked, only 3 allowed for this post" for v in first["void"])
+    assert {v["candidate_id"] for v in second["void"]} == {by_voter["13"], by_voter["12"]}
+    assert all(v["position_id"] == report["positions"][0]["position_id"] for v in second["void"])
+    assert third["void"] == [] and sum(len(b["void"]) for b in report["ballots"]) == report["void_marks"]
     # the public dashboard follows too; the Admin can hide the numbers
     public = (await client.get(f"/api/dashboard/results/{election['id']}")).json()
     assert public["stats"]["counted_ballots"] == 3 and len(public["positions"]) == 13  # published from the start

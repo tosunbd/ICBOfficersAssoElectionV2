@@ -13,6 +13,7 @@ class ReportCandidate(BaseModel):
     name_en: str
     name_bn: str | None
     display_order: int            # column order in the ballot tally (as printed on the ballot)
+    panel: str                    # side of the ballot paper the name is printed on: "left" | "right"
     votes: int
     percentage: float             # of the valid ballots
     rank: int                     # tied candidates share a rank
@@ -29,6 +30,13 @@ class ReportPosition(BaseModel):
     candidates: list[ReportCandidate]   # by votes, highest first
 
 
+class ReportVoidMark(BaseModel):
+    """One box marked on a ballot that is not counted (null vote)."""
+    candidate_id: int
+    position_id: int
+    reason: str
+
+
 class ReportBallot(BaseModel):
     ballot_id: int
     serial: int                   # 1, 2, 3 ... in counting order
@@ -39,6 +47,7 @@ class ReportBallot(BaseModel):
     is_valid: bool                # False only on ballots voided before whole-ballot rejection was removed
     candidate_ids: list[int]      # the candidates this ballot counts for (the 1s)
     void_marks: int               # marks found but not counted (ballot rules)
+    void: list[ReportVoidMark]    # those marks, one by one (Null Votes report)
 
 
 class ElectionReport(BaseModel):

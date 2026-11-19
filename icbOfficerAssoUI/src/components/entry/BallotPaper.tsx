@@ -3,12 +3,15 @@
 import { useMemo } from "react";
 import type { Candidate, Position } from "@/lib/types";
 import { toBengaliDigits } from "@/lib/format";
+import { withBase } from "@/lib/basePath";
 
 /**
  * The ballot paper as an entry form: the same layout as the printed paper
- * (Blank_ballot_form 2_Final_Format.docx) — title and paper number on top,
- * then one row per pair of candidates with the post name in the middle and a
- * box beside every name, and the instructions underneath.
+ * (Blank_ballot_form.docx of 19-11-2026) — QR code, title and the large paper
+ * number box on top, then one row per pair of candidates with the post name in
+ * the middle and a box beside every name, the instructions underneath and the
+ * bar code at the bottom left.  QR code and bar code are the pictures of the
+ * printed paper (the same on every ballot: "ICBOA-20-2026").
  *
  * Added for entry: a "Select all" tick at the right of each
  * "ভোটার নং ও প্রার্থীর নাম" heading, above the boxes of that side.
@@ -157,7 +160,11 @@ export function BallotPaper({ titleBn, ballotLabel, rows, selected, nullIds, rea
     <div className={`bp ${readOnly ? "is-readonly" : ""}`} key={flashKey}>
       {stamp && <div className="bp-stamp" aria-hidden="true">{stamp}</div>}
       <div className="bp-top">
-        <div className="bp-title">{titleBn}</div>
+        <div className="bp-heading">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="bp-qr" src={withBase("/ballot-qr.png")} alt="QR code of the ballot paper" />
+          <div className="bp-title">{titleBn}</div>
+        </div>
         <div className="bp-number">
           <span className="bp-number-label">ব্যালট পেপার নং</span>
           <span className="bp-number-box" title={ballotLabel ? `Ballot paper ${ballotLabel}` : undefined}>{ballotLabel ? toBengaliDigits(ballotLabel) : ""}</span>
@@ -201,6 +208,8 @@ export function BallotPaper({ titleBn, ballotLabel, rows, selected, nullIds, rea
           <div>সীলঃ</div>
         </div>
       </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="bp-barcode" src={withBase("/ballot-barcode.png")} alt="Bar code of the ballot paper" />
     </div>
   );
 }

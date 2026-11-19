@@ -38,12 +38,15 @@
 }
 
 .bp-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: clamp(8px, 1vw, 14px); }
+.bp-heading { display: flex; align-items: flex-end; gap: clamp(6px, 0.8vw, 12px); min-width: 0; }
+.bp-qr { width: clamp(40px, 5.6vw, 66px); height: auto; aspect-ratio: 1; flex-shrink: 0; image-rendering: pixelated; }
+.bp-barcode { display: block; width: clamp(150px, 31%, 290px); height: clamp(24px, 3.6vw, 44px); margin-top: clamp(8px, 1.2vw, 16px); image-rendering: pixelated; }
 .bp-title { font-size: clamp(0.86rem, 1.3vw, 1.16rem); font-weight: 700; line-height: 1.35; border-bottom: 1.5px solid var(--bp-line); padding-bottom: 2px; }
 .bp-number { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .bp-number-label { font-size: clamp(0.8rem, 1.2vw, 1.05rem); font-weight: 700; white-space: nowrap; }
 .bp-number-box {
-  min-width: clamp(60px, 7vw, 96px); height: clamp(34px, 3.6vw, 48px); padding: 0 10px; display: grid; place-items: center;
-  border: 2px solid var(--bp-blue); font-size: clamp(1.05rem, 1.8vw, 1.5rem); font-weight: 700; letter-spacing: 0.08em; color: var(--bp-ink);
+  min-width: clamp(96px, 15vw, 168px); height: clamp(44px, 5.4vw, 64px); padding: 0 12px; display: grid; place-items: center;
+  border: 2px solid var(--bp-blue); font-size: clamp(1.5rem, 3vw, 2.4rem); font-weight: 700; letter-spacing: 0.1em; color: var(--bp-ink);
   background: #fff;
 }
 

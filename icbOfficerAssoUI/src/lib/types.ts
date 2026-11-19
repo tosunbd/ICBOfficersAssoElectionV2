@@ -227,6 +227,7 @@ export interface ReportCandidate {
   name_en: string;
   name_bn: string | null;
   display_order: number;
+  panel: "left" | "right" | "";    // side of the ballot paper the name is printed on
   votes: number;
   percentage: number;
   rank: number;
@@ -243,6 +244,13 @@ export interface ReportPosition {
   candidates: ReportCandidate[];   // by votes, highest first
 }
 
+/** A box marked on a ballot that is not counted (Null Votes report). */
+export interface ReportVoidMark {
+  candidate_id: number;
+  position_id: number;
+  reason: string;
+}
+
 export interface ReportBallot {
   ballot_id: number;
   serial: number;
@@ -253,6 +261,7 @@ export interface ReportBallot {
   is_valid: boolean;
   candidate_ids: number[];         // the 1s of this row
   void_marks: number;
+  void: ReportVoidMark[];
 }
 
 export interface ElectionReport {

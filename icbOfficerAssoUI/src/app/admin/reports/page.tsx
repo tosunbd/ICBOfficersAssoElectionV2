@@ -15,11 +15,15 @@ import { Icon } from "@/components/ui/Icon";
 import {
   REPORT_TITLES, SummaryReport, TallyReport, ballotLabel, remark, reportDate, tallyColumns, type ReportKind,
 } from "@/components/reports/ReportSheets";
+import { NullReport, PANEL_LABELS, PanelReport, type Panel } from "@/components/reports/PanelNullSheets";
 
 const SIGNATORIES_KEY = "icb-report-signatories";
 const DEFAULT_SIGNATORIES = ["Member, Election Commission", "Member, Election Commission", "Chief Election Commissioner"];
 
-/** Paper for the wide tally; the summary is always A4 portrait. */
+/** Default PDF file name of every sheet. */
+const FILE_NAMES: Record<ReportKind, string> = { summary: "Result-Summary", tally: "Ballot-Tally", panel: "Panel-Votes", null: "Null-Votes" };
+
+/** Paper for the wide tally; the other sheets are always A4 portrait. */
 const PAPERS = {
   "A4 landscape": "A4 landscape",
   "A3 landscape": "A3 landscape",
@@ -48,6 +52,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [kind, setKind] = useState<ReportKind>("summary");
   const [paper, setPaper] = useState<Paper>("A4 landscape");
+  const [panel, setPanel] = useState<Panel>("left");
   const signsRaw = useSyncExternalStore(subscribeSigns, readSigns, () => null);
   const signatories = useMemo(() => parseSigns(signsRaw), [signsRaw]);
   const hydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
@@ -81,7 +86,7 @@ export default function ReportsPage() {
   const print = async () => {
     await load();  // print the latest figures
     const previous = document.title;
-    document.title = fileName(kind === "summary" ? "Result-Summary" : "Ballot-Tally");  // default PDF file name
+    document.title = fileName(kind === "panel" ? `Panel-${panel === "left" ? "Left" : "Right"}-Votes` : FILE_NAMES[kind]);  // default PDF file name
     const restore = () => { document.title = previous; window.removeEventListener("afterprint", restore); };
     window.addEventListener("afterprint", restore);
     // let React paint the refreshed copy before the print dialog opens
@@ -109,15 +114,18 @@ export default function ReportsPage() {
 
   if (!election) return <EmptyState icon="landmark" title="Create an election first" />;
 
-  const sheet = report && (kind === "summary"
-    ? <SummaryReport report={report} signatories={signatories} />
-    : <TallyReport report={report} signatories={signatories} highlight={highlight} onHighlight={setHighlight} />);
-  const pageSize = kind === "summary" ? "A4 portrait" : PAPERS[paper];
+  const sheet = report && (
+    kind === "summary" ? <SummaryReport report={report} signatories={signatories} />
+    : kind === "tally" ? <TallyReport report={report} signatories={signatories} highlight={highlight} onHighlight={setHighlight} />
+    : kind === "panel" ? <PanelReport report={report} panel={panel} signatories={signatories} />
+    : <NullReport report={report} signatories={signatories} />);
+  const pageSize = kind === "tally" ? PAPERS[paper] : "A4 portrait";
+  const footerTitle = kind === "panel" ? `${REPORT_TITLES.panel.en} (${PANEL_LABELS[panel]})` : REPORT_TITLES[kind].en;
 
   return (
     <div className="page">
       {/* paper size and page numbers of the PDF */}
-      <style>{`@page { size: ${pageSize}; margin: 12mm 11mm 14mm; @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8pt sans-serif; color: #555; } @bottom-left { content: "${REPORT_TITLES[kind].en} · ${(report?.title ?? "").replace(/["\\]/g, "")}"; font: 8pt sans-serif; color: #555; }${kind === "tally" ? ' @bottom-center { content: "Initials: ____________   ____________   ____________"; font: 8pt sans-serif; color: #555; }' : ""} }`}</style>
+      <style>{`@page { size: ${pageSize}; margin: 12mm 11mm 14mm; @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8pt sans-serif; color: #555; } @bottom-left { content: "${footerTitle} · ${(report?.title ?? "").replace(/["\\]/g, "")}"; font: 8pt sans-serif; color: #555; }${kind === "tally" ? ' @bottom-center { content: "Initials: ____________   ____________   ____________"; font: 8pt sans-serif; color: #555; }' : ""} }`}</style>
 
       <PageHeader eyebrow="Command" title="Reports" subtitle="Official result sheets to print, sign and submit"
         actions={
@@ -131,9 +139,9 @@ export default function ReportsPage() {
       <div className="card mb-6">
         <CardHead icon="scroll" title="Report" subtitle="Choose the sheet; the preview below is exactly what is printed">
           <div className="segmented" role="tablist">
-            {(Object.keys(REPORT_TITLES) as ReportKind[]).map((k) => (
+            {(Object.keys(REPORT_TITLES) as ReportKind[]).map((k, index) => (
               <button key={k} role="tab" aria-selected={kind === k} className={kind === k ? "active" : ""} onClick={() => setKind(k)}>
-                {k === "summary" ? "1 · " : "2 · "}{REPORT_TITLES[k].en}
+                {index + 1} · {REPORT_TITLES[k].en}
               </button>
             ))}
           </div>
@@ -147,6 +155,16 @@ export default function ReportsPage() {
               </select>
               <em>A3 suits many candidates; the column headings repeat on every page.</em>
             </label>
+          ) : kind === "panel" ? (
+            <label className="rpt-option">
+              <span>Panel</span>
+              <select className="input" value={panel} onChange={(e) => setPanel(e.target.value as Panel)}>
+                {(Object.keys(PANEL_LABELS) as Panel[]).map((p) => <option key={p} value={p}>{PANEL_LABELS[p]}</option>)}
+              </select>
+              <em>The candidates printed on that side of the ballot paper. A4 portrait.</em>
+            </label>
+          ) : kind === "null" ? (
+            <div className="rpt-option"><span>Paper</span><b>A4 portrait</b><em>Every vote that is not counted, with its reason; posts left blank and blank ballots.</em></div>
           ) : (
             <div className="rpt-option"><span>Paper</span><b>A4 portrait</b><em>Elected candidates first, then the votes of every candidate.</em></div>
           )}

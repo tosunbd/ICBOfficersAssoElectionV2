@@ -476,7 +476,7 @@ function EntryDesk() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Super Admin / Admin: watch the three desks (read only)             */
+/*  Super Admin / Admin: watch the three desks, edit a saved ballot    */
 /* ------------------------------------------------------------------ */
 
 function EntryMonitor() {
@@ -495,6 +495,9 @@ function EntryMonitor() {
   const [showSaved, setShowSaved] = useState(false);                     // ... as saved instead of as corrected
   const [decision, setDecision] = useState<{ item: Correction; approve: boolean } | null>(null);
   const [deciding, setDeciding] = useState(false);
+  const [edit, setEdit] = useState<{ ballotNo: number; ids: Set<number> } | null>(null);  // the opened ballot is being edited
+  const [confirmEdit, setConfirmEdit] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const digits = state?.digits ?? 3;
   const { positions, candidates, rows, ready, error: layoutError } = useBallotLayout(state?.election?.id ?? null);
@@ -539,21 +542,25 @@ function EntryMonitor() {
 
   useLoader(load, 1500);
 
-  const open = useCallback(async (ballotNo: number) => {
+  const open = useCallback(async (ballotNo: number, startEditing = false) => {
     if (!token) return;
     try {
-      setOpened(await api.entry.get(token, ballotNo));
+      const ballot = await api.entry.get(token, ballotNo);
+      setOpened(ballot);
+      setReviewId(null);
+      setEdit(startEditing ? { ballotNo: ballot.ballot_no, ids: new Set(ballot.candidate_ids) } : null);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
       toast.error(errorMessage(err));
     }
   }, [token, toast]);
 
-  // /admin/entry?ballot=12 (from the ballot register)
+  // /admin/entry?ballot=12 (from the ballot register; &edit=1 opens it for editing)
   const wanted = Number(params.get("ballot"));
+  const wantedEdit = params.get("edit") === "1";
   const openWanted = useCallback(async () => {
-    if (Number.isInteger(wanted) && wanted > 0) await open(wanted);
-  }, [wanted, open]);
+    if (Number.isInteger(wanted) && wanted > 0) await open(wanted, wantedEdit);
+  }, [wanted, wantedEdit, open]);
   useLoader(openWanted);
 
   const desk = state?.desks.find((d) => d.username === deskName) ?? state?.desks.find((d) => d.online) ?? state?.desks[0] ?? null;
@@ -581,6 +588,41 @@ function EntryMonitor() {
     if (Number.isInteger(number) && number > 0) { void open(number); setFindNo(""); }
   };
 
+  // editing applies to the opened ballot only: opening another one, a desk or a correction ends it
+  const editing = edit !== null && opened !== null && reviewId === null && edit.ballotNo === opened.ballot_no ? edit : null;
+  const toggleEdit = (id: number) => setEdit((current) => {
+    if (!current) return current;
+    const next = new Set(current.ids);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return { ...current, ids: next };
+  });
+  const selectAllEdit = (side: Side) => setEdit((current) => {
+    if (!current) return current;
+    const next = new Set(current.ids);
+    const sideAll = sideIds(rows, side);
+    const all = sideAll.every((id) => next.has(id));
+    sideAll.forEach((id) => (all ? next.delete(id) : next.add(id)));
+    return { ...current, ids: next };
+  });
+  const saveEdit = async () => {
+    if (!token || !editing) return;
+    setSavingEdit(true);
+    try {
+      const ballot = await api.entry.edit(token, editing.ballotNo, Array.from(editing.ids));
+      toast.success(`Ballot ${ballot.label} changed: ${ballot.counted} vote${ballot.counted === 1 ? "" : "s"} counted now` +
+        (ballot.null_marks ? `, ${ballot.null_marks} null mark${ballot.null_marks === 1 ? "" : "s"}` : "") + ". The dashboard is updated.");
+      setOpened(ballot);
+      setEdit(null);
+      void loadCorrections();
+      api.entry.recent(token, 15).then(setRecent).catch(() => undefined);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setSavingEdit(false);
+      setConfirmEdit(false);
+    }
+  };
+
   if (!state) return loadError ? <Alert type="error">{loadError}</Alert> : <Spinner label="Connecting to the entry desks…" />;
   if (!state.election) {
     return <EmptyState icon="landmark" title="No election is active"><p>Set the election to <strong>active</strong> under Elections; the Election Commissioners can then enter ballots.</p></EmptyState>;
@@ -593,7 +635,8 @@ function EntryMonitor() {
   const mode: "review" | "opened" | "live" | "last" | "idle" = review ? "review" : opened ? "opened" : draft ? "live" : saved ? "last" : "idle";
   const ids = review ? (showSaved ? review.previous_candidate_ids : review.candidate_ids)
     : mode === "live" ? draft!.candidate_ids : saved?.candidate_ids ?? [];
-  const selected = new Set(ids);
+  const selected = editing ? editing.ids : new Set(ids);
+  const edited = editing !== null && opened !== null && !sameIds(editing.ids, opened.candidate_ids);
   const check = checkBallot(positions, candidates, selected);
   const label = review ? review.label : mode === "live" ? draft!.label : saved?.label ?? (desk?.next_label ?? "");
   const overall = state.total_ballots ? Math.round((state.total_entered / state.total_ballots) * 1000) / 10 : 0;
@@ -601,7 +644,7 @@ function EntryMonitor() {
   return (
     <div className="page">
       <PageHeader eyebrow="Counting" title="Ballot entry · live monitor"
-        subtitle="What EC1, EC2 and EC3 are entering right now. View only: ballots are entered and corrected at the desks."
+        subtitle="What EC1, EC2 and EC3 are entering right now. Ballots are entered at the desks; open any saved ballot to check it or to edit it."
         actions={<span className="badge badge-primary"><Icon name="vote" />{state.total_entered} of {state.total_ballots} entered · {overall}%</span>} />
 
       {loadError && <Alert type="error">Connection problem: {loadError}</Alert>}
@@ -674,12 +717,23 @@ function EntryMonitor() {
               <button className="btn btn-ghost btn-sm" onClick={() => setReviewId(null)} aria-label="Close"><Icon name="x" size={14} /></button>
             </div>
           )}
-          {mode === "opened" && saved && (
+          {editing && opened && (
+            <div className="entry-banner is-edit">
+              <Icon name="edit" size={20} />
+              <div className="flex-1">Editing ballot {opened.label} · saved by {opened.entered_by ?? "—"}
+                <small>Change the ticks, then save. No approval is needed: the totals, the dashboard and the reports change at once.{opened.pending ? ` ${opened.pending.requested_by} has a correction of this ballot waiting for approval.` : ""}</small>
+              </div>
+              <button className="btn btn-success btn-sm" onClick={() => setConfirmEdit(true)} disabled={!edited || savingEdit}><Icon name="save" size={14} /> Save changes</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setEdit(null)} disabled={savingEdit}><Icon name="undo" size={14} /> Cancel</button>
+            </div>
+          )}
+          {mode === "opened" && saved && !editing && (
             <div className="entry-banner is-view">
               <Icon name="eye" size={20} />
               <div className="flex-1">Ballot {saved.label} · saved by {saved.entered_by ?? "—"}
-                <small>{formatDateTime(saved.entered_at)}{saved.corrected_at ? ` · corrected by ${saved.corrected_by ?? "—"}, approved by ${saved.approved_by ?? "—"} ${formatDateTime(saved.corrected_at)}` : ""}{saved.pending ? " · a correction is waiting for approval" : ""}</small>
+                <small>{formatDateTime(saved.entered_at)}{saved.corrected_at ? ` · ${saved.approved_by ? `corrected by ${saved.corrected_by ?? "—"}, approved by ${saved.approved_by}` : `edited by ${saved.corrected_by ?? "—"}`} ${formatDateTime(saved.corrected_at)}` : ""}{saved.pending ? " · a correction is waiting for approval" : ""}</small>
               </div>
+              <button className="btn btn-primary btn-sm" onClick={() => setEdit({ ballotNo: saved.ballot_no, ids: new Set(saved.candidate_ids) })} disabled={!ready}><Icon name="edit" size={14} /> Edit</button>
               <button className="btn btn-ghost btn-sm" onClick={() => setOpened(null)}><Icon name="activity" size={14} /> Back to live</button>
             </div>
           )}
@@ -711,9 +765,10 @@ function EntryMonitor() {
             <BallotPaper
               titleBn={state.election.title_bn ?? FALLBACK_TITLE}
               ballotLabel={label}
-              rows={rows} selected={selected} nullIds={check.nullIds} readOnly
-              stamp={mode === "review" ? (showSaved ? "Saved" : "Proposed") : mode === "opened" || mode === "last" ? (saved?.status === "reviewed" ? "Corrected" : "Saved") : undefined}
-              flashKey={`${mode}-${label}-${showSaved}`}
+              rows={rows} selected={selected} nullIds={check.nullIds} readOnly={!editing}
+              onToggle={toggleEdit} onSelectAll={selectAllEdit}
+              stamp={editing ? undefined : mode === "review" ? (showSaved ? "Saved" : "Proposed") : mode === "opened" || mode === "last" ? (saved?.status === "reviewed" ? "Corrected" : "Saved") : undefined}
+              flashKey={`${mode}-${label}-${showSaved}-${editing ? "edit" : "view"}`}
             />
           )}
         </div>
@@ -721,7 +776,7 @@ function EntryMonitor() {
         <aside className="entry-side">
           <div className="card card-gold">
             <CardHead icon="vote" title={mode === "live" ? `Ballot ${label} · live` : label ? `Ballot ${label}` : "Ballot"}
-              subtitle={mode === "review" ? (showSaved ? "As saved now" : "As it would be after approval") : mode === "live" ? "Not saved yet" : mode === "idle" ? "Nothing to show yet" : "As saved"} gold />
+              subtitle={mode === "review" ? (showSaved ? "As saved now" : "As it would be after approval") : editing ? (edited ? "As it would be after saving" : "As saved: change the ticks on the paper") : mode === "live" ? "Not saved yet" : mode === "idle" ? "Nothing to show yet" : "As saved"} gold />
             <TallyCard check={check} />
           </div>
 
@@ -739,6 +794,15 @@ function EntryMonitor() {
           </div>
         </aside>
       </div>
+
+      <ConfirmDialog open={confirmEdit && editing !== null} busy={savingEdit}
+        title={`Save the changes to ballot ${opened?.label ?? ""}`}
+        message={opened
+          ? `Ballot ${opened.label} (entered by ${opened.entered_by ?? "—"}) will be changed: boxes marked ${opened.candidate_ids.length} → ${check.marked}, counted votes ${opened.counted} → ${check.counted}, null marks ${opened.null_marks} → ${check.nullIds.size}.`
+            + (check.marked === 0 ? " No box is ticked: it becomes a blank ballot." : "")
+            + " The totals, the dashboard and the reports change at once, and the change is written to the audit log."
+          : ""}
+        confirmLabel="Save changes" onConfirm={saveEdit} onCancel={() => setConfirmEdit(false)} />
 
       <ConfirmDialog open={decision !== null} busy={deciding} danger={decision ? !decision.approve : false}
         title={decision ? `${decision.approve ? "Approve" : "Reject"} the correction of ballot ${decision.item.label}` : ""}

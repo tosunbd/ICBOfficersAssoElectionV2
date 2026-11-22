@@ -8,6 +8,9 @@ Counting rules (the same for every post):
   null vote: stored (so the ballot can be shown exactly as entered) but flagged
   invalid and never counted.  So two marks for President -> no vote for
   President; four marks for Executive Member -> no vote for Executive Member.
+* A mark that is not very clear is still a mark: if the other box(es) of the
+  post are purely empty, the commissioner ticks it and it counts.  Only a voter
+  who touched more boxes of a post than it allows makes that post invalid.
 * The other posts of the same ballot are not affected, and a ballot is never
   rejected as a whole.  A post with no mark simply has no vote.
 """

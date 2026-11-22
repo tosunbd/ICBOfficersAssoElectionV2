@@ -45,6 +45,14 @@ The number ranges are `ENTRY_RANGES` in `.env`.
   Null marks are shown in red on the form and are never counted; the other
   posts of the same ballot count as usual. The form asks for confirmation
   before saving a ballot with null votes or a blank ballot.
+* **Unclear mark:** a mark that is not very clear is still a vote: an X with
+  one stroke short or broken, or strokes that do not meet in the middle, is
+  accepted. If one
+  candidate of a post has an unclear mark and the other box of that post is
+  purely empty, tick the unclear one: it is counted. A vote for a post is
+  invalid only when the voter touched more boxes of that post than it allows
+  (both boxes of a two-candidate post): tick them all and the post becomes a
+  null vote.
 * **Blank ballot:** a voter who votes for nobody. Save the form with no box
   ticked (and confirm): the paper is counted as a ballot, with no vote for any
   candidate.

@@ -396,6 +396,8 @@ function EntryDesk() {
                 <kbd>Ctrl</kbd> + <kbd>Enter</kbd> saves. A paper with no mark is saved as a blank ballot: it is counted, with no vote for anyone.
                 Several boxes of one post may be ticked, as on the paper: a post with more marks than allowed
                 (1, or 3 for <span className="text-bengali">নির্বাহী সদস্য</span>) becomes a null vote.
+                An unclear mark is still a vote (an X with a short or broken stroke, or strokes that do not meet in the middle): if the other box of that post is purely empty, tick the unclear one and it counts.
+                Tick both only when the voter touched both boxes of the post; that vote is invalid.
                 {editing && " A correction counts only after the SA or the Admin approves it."}
               </p>
             </div>
@@ -459,7 +461,7 @@ function EntryDesk() {
           </div>
         ) : (
           <div>
-            <p className="text-muted" style={{ marginBottom: 12 }}>These posts have more marks than allowed, so <strong>no vote is counted for them</strong>. The other posts count as usual. Save if the paper really is marked this way.</p>
+            <p className="text-muted" style={{ marginBottom: 12 }}>These posts have more marks than allowed, so <strong>no vote is counted for them</strong>. The other posts count as usual. Save if the paper really is marked this way: the voter touched every one of these boxes. If only one box has a mark, even an unclear one, and the other is purely empty, go back and tick only that one: it counts.</p>
             <div className="entry-nulls" style={{ marginTop: 0 }}>
               {check.nullPosts.map((post) => (
                 <div className="entry-null" key={post.position.id}>

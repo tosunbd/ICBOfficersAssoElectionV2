@@ -7,10 +7,10 @@ import { withBase } from "@/lib/basePath";
 
 /**
  * The ballot paper as an entry form: the same layout as the printed paper
- * (Blank_ballot_form.docx of 19-11-2026) — QR code, title and the large paper
+ * (Blank_ballot_form.docx of 22-11-2026) — QR code, title and the large paper
  * number box on top, then one row per pair of candidates with the post name in
  * the middle and a box beside every name, the instructions underneath and the
- * bar code at the bottom left.  QR code and bar code are the pictures of the
+ * bar code at the bottom centre.  QR code and bar code are the pictures of the
  * printed paper (the same on every ballot: "ICBOA-20-2026").
  *
  * Added for entry: a "Select all" tick at the right of each

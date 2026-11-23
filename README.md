@@ -100,7 +100,7 @@ their corrections still need approval.
 | Overview, Results, **Reports**, Ballots, Elections, Candidates, Audit log, Settings | `/election/admin/...` | SA, Admin |
 | Dashboard (projector) | `/election/dashboard` | everyone; refreshed every 2 seconds |
 
-The Reports page (1 Result Summary, 2 Ballot-wise Vote Tally, 3 Panel Votes with Panel Left / Panel Right, 4 Null Votes; print / PDF / CSV)
+The Reports page (1 Result Summary, 2 Ballot-wise Vote Tally; print / PDF / CSV)
 is the same as in the previous system.
 
 ## Running (Windows)

@@ -3,19 +3,16 @@ import type { ElectionReport, ReportPosition } from "@/lib/types";
 import { withBase } from "@/lib/basePath";
 
 /**
- * The printable result sheets (Admin -> Reports): 1 summary and 2 tally here,
- * 3 panel votes and 4 null votes in PanelNullSheets.tsx.  Plain black-on-white
- * "paper" markup styled by reports.css: the same component is the on-screen
- * preview and, rendered into the print root, the PDF.
+ * The printable result sheets (Admin -> Reports): 1 summary and 2 tally.
+ * Plain black-on-white "paper" markup styled by reports.css: the same
+ * component is the on-screen preview and, rendered into the print root, the PDF.
  */
 
-export type ReportKind = "summary" | "tally" | "panel" | "null";
+export type ReportKind = "summary" | "tally";
 
 export const REPORT_TITLES: Record<ReportKind, { en: string; bn: string }> = {
   summary: { en: "Result Summary", bn: "ফলাফল সারসংক্ষেপ" },
   tally: { en: "Ballot-wise Vote Tally", bn: "ব্যালট-ভিত্তিক ভোট গণনা" },
-  panel: { en: "Panel Votes", bn: "প্যানেল ভোট" },
-  null: { en: "Null Votes", bn: "বাতিল ভোট" },
 };
 
 /** API timestamps are naive UTC. */
@@ -87,7 +84,7 @@ export function Signatures({ signatories, statement, compact }: { signatories: s
 
 /* ------------------------------------------------ 1. result summary */
 
-export function PostName({ p }: { p: ReportPosition }) {
+function PostName({ p }: { p: ReportPosition }) {
   return (
     <>
       {p.name_bn && <span className="rpt-bn">{p.name_bn}</span>}
@@ -217,7 +214,7 @@ export function SummaryReport({ report, signatories }: { report: ElectionReport;
   );
 }
 
-export function Figure({ label, value }: { label: string; value: ReactNode }) {
+function Figure({ label, value }: { label: string; value: ReactNode }) {
   return <div className="rpt-figure"><b>{value}</b><span>{label}</span></div>;
 }
 

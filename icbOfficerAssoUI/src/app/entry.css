@@ -12,6 +12,23 @@
   .entry-side { position: static; max-height: none; }
 }
 
+/* ---------- the entry desk of EC1, EC2, EC3: no page heading, the ballot starts at the top ---------- */
+.admin-content:has(.entry-desk) { padding-top: 14px; }
+.entry-desk .entry-side { top: 74px; max-height: calc(100vh - 88px); }
+.entry-full-btn { margin-left: auto; align-self: flex-start; white-space: nowrap; }
+/* "Full screen": only the ballot and the side panel, without the menu and the top bar */
+html.entry-full .sidebar, html.entry-full .sidebar-scrim, html.entry-full .topbar { display: none; }
+html.entry-full .admin-layout { grid-template-columns: minmax(0, 1fr); }
+html.entry-full .admin-content { max-width: none; padding: 12px 16px; }
+html.entry-full .entry-desk .entry-side { top: 12px; max-height: calc(100vh - 24px); }
+/* in full screen the paper is zoomed out to the height of the screen (FitToScreen in admin/entry/page.tsx) */
+.entry-fit { width: 100%; }
+.entry-fit-paper { display: flex; justify-content: center; }
+.entry-fit .bp { max-width: var(--bp-fit-width, 960px); }
+@media (max-width: 1180px) {
+  .entry-desk .entry-side { max-height: none; }
+}
+
 /* ---------- the paper ---------- */
 .bp {
   --bp-ink: #14161f;
@@ -88,8 +105,10 @@
 }
 .bp-boxbtn:not(:disabled):hover .bp-box { box-shadow: 0 0 0 4px rgba(53, 101, 201, 0.18); }
 .bp-boxbtn:not(:disabled):active .bp-box { transform: scale(0.95); }
-.bp-boxbtn:focus-visible { outline: none; }
-.bp-boxbtn:focus-visible .bp-box { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.55); }
+/* the box the keyboard is on (arrow keys move it, Space or Enter ticks it): a clear ring, also after a click */
+.bp-boxbtn:focus { outline: none; }
+.bp-boxbtn:focus .bp-box { border-color: #d97706; box-shadow: 0 0 0 3px #f59e0b, 0 0 14px 5px rgba(245, 158, 11, 0.55); }
+.bp-boxcell:focus-within { background: #fff7e0; }
 .bp-box svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .bp-box line { stroke: var(--bp-x); stroke-width: 5; stroke-linecap: round; vector-effect: non-scaling-stroke; stroke-dasharray: 130; stroke-dashoffset: 130; animation: bpDraw 220ms ease-out forwards; }
 .bp-box line + line { animation-delay: 90ms; }

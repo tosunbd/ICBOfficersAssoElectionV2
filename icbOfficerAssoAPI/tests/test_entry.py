@@ -362,17 +362,8 @@ async def test_report_follows_every_saved_ballot(client, login, election, ids):
     assert executive["20"] == (1, "elected") and executive["237"] == (0, "")
     # the tally rows are the same votes
     assert sum(len(b["candidate_ids"]) for b in report["ballots"]) == report["total_votes"]
-    # Panel Votes: the side of the paper every candidate is printed on
-    panel = {c["voter_no"]: c["panel"] for p in report["positions"] for c in p["candidates"]}
-    assert all(panel[v] == "left" for v in LEFT_COLUMN) and all(panel[v] == "right" for v in RIGHT_COLUMN)
-    # Null Votes: every mark that is not counted, with the reason
-    by_voter = {c["voter_no"]: c["candidate_id"] for p in report["positions"] for c in p["candidates"]}
-    first, second, third = report["ballots"]
-    assert {v["candidate_id"] for v in first["void"]} == {by_voter[v] for v in ("20", "76", "33", "237")}
-    assert all(v["reason"] == "Null vote: 4 marked, only 3 allowed for this post" for v in first["void"])
-    assert {v["candidate_id"] for v in second["void"]} == {by_voter["13"], by_voter["12"]}
-    assert all(v["position_id"] == report["positions"][0]["position_id"] for v in second["void"])
-    assert third["void"] == [] and sum(len(b["void"]) for b in report["ballots"]) == report["void_marks"]
+    # the marks that are not counted, ballot by ballot
+    assert [b["void_marks"] for b in report["ballots"]] == [4, 2, 0]
     # the public dashboard follows too; the Admin can hide the numbers
     public = (await client.get(f"/api/dashboard/results/{election['id']}")).json()
     assert public["stats"]["counted_ballots"] == 3 and len(public["positions"]) == 13  # published from the start

@@ -15,15 +15,14 @@ import { Icon } from "@/components/ui/Icon";
 import {
   REPORT_TITLES, SummaryReport, TallyReport, ballotLabel, remark, reportDate, tallyColumns, type ReportKind,
 } from "@/components/reports/ReportSheets";
-import { NullReport, PANEL_LABELS, PanelReport, type Panel } from "@/components/reports/PanelNullSheets";
 
 const SIGNATORIES_KEY = "icb-report-signatories";
 const DEFAULT_SIGNATORIES = ["Member, Election Commission", "Member, Election Commission", "Chief Election Commissioner"];
 
 /** Default PDF file name of every sheet. */
-const FILE_NAMES: Record<ReportKind, string> = { summary: "Result-Summary", tally: "Ballot-Tally", panel: "Panel-Votes", null: "Null-Votes" };
+const FILE_NAMES: Record<ReportKind, string> = { summary: "Result-Summary", tally: "Ballot-Tally" };
 
-/** Paper for the wide tally; the other sheets are always A4 portrait. */
+/** Paper for the wide tally; the summary is always A4 portrait. */
 const PAPERS = {
   "A4 landscape": "A4 landscape",
   "A3 landscape": "A3 landscape",
@@ -52,7 +51,6 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [kind, setKind] = useState<ReportKind>("summary");
   const [paper, setPaper] = useState<Paper>("A4 landscape");
-  const [panel, setPanel] = useState<Panel>("left");
   const signsRaw = useSyncExternalStore(subscribeSigns, readSigns, () => null);
   const signatories = useMemo(() => parseSigns(signsRaw), [signsRaw]);
   const hydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
@@ -86,7 +84,7 @@ export default function ReportsPage() {
   const print = async () => {
     await load();  // print the latest figures
     const previous = document.title;
-    document.title = fileName(kind === "panel" ? `Panel-${panel === "left" ? "Left" : "Right"}-Votes` : FILE_NAMES[kind]);  // default PDF file name
+    document.title = fileName(FILE_NAMES[kind]);  // default PDF file name
     const restore = () => { document.title = previous; window.removeEventListener("afterprint", restore); };
     window.addEventListener("afterprint", restore);
     // let React paint the refreshed copy before the print dialog opens
@@ -116,11 +114,9 @@ export default function ReportsPage() {
 
   const sheet = report && (
     kind === "summary" ? <SummaryReport report={report} signatories={signatories} />
-    : kind === "tally" ? <TallyReport report={report} signatories={signatories} highlight={highlight} onHighlight={setHighlight} />
-    : kind === "panel" ? <PanelReport report={report} panel={panel} signatories={signatories} />
-    : <NullReport report={report} signatories={signatories} />);
+    : <TallyReport report={report} signatories={signatories} highlight={highlight} onHighlight={setHighlight} />);
   const pageSize = kind === "tally" ? PAPERS[paper] : "A4 portrait";
-  const footerTitle = kind === "panel" ? `${REPORT_TITLES.panel.en} (${PANEL_LABELS[panel]})` : REPORT_TITLES[kind].en;
+  const footerTitle = REPORT_TITLES[kind].en;
 
   return (
     <div className="page">
@@ -155,16 +151,6 @@ export default function ReportsPage() {
               </select>
               <em>A3 suits many candidates; the column headings repeat on every page.</em>
             </label>
-          ) : kind === "panel" ? (
-            <label className="rpt-option">
-              <span>Panel</span>
-              <select className="input" value={panel} onChange={(e) => setPanel(e.target.value as Panel)}>
-                {(Object.keys(PANEL_LABELS) as Panel[]).map((p) => <option key={p} value={p}>{PANEL_LABELS[p]}</option>)}
-              </select>
-              <em>The candidates printed on that side of the ballot paper. A4 portrait.</em>
-            </label>
-          ) : kind === "null" ? (
-            <div className="rpt-option"><span>Paper</span><b>A4 portrait</b><em>Every vote that is not counted, with its reason; posts left blank and blank ballots.</em></div>
           ) : (
             <div className="rpt-option"><span>Paper</span><b>A4 portrait</b><em>Elected candidates first, then the votes of every candidate.</em></div>
           )}

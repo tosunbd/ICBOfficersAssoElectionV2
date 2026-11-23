@@ -8,10 +8,6 @@ than a post allows -> null vote for that post) is simply not counted.
 
 "Manual" ballots are the ones corrected after they were first saved (status
 reviewed).  They count in the totals like every other ballot.
-
-The same response feeds the Panel Votes report (every candidate carries the
-side of the ballot paper it is printed on) and the Null Votes report (every
-mark that is not counted, with its reason).
 """
 
 from collections import defaultdict
@@ -23,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import AdminUser, Ballot, Election, Position
 from app.models.ballot import BallotStatus
-from app.schemas.report import ElectionReport, ReportBallot, ReportCandidate, ReportPosition, ReportVoidMark
+from app.schemas.report import ElectionReport, ReportBallot, ReportCandidate, ReportPosition
 from app.services.vote_counter import vote_counter
 from app.utils.security import get_admin_user
 from app.utils.time import utcnow
@@ -56,17 +52,14 @@ async def election_report(
     total_void = 0
     for serial, ballot in enumerate(ballots, start=1):
         counted = sorted({v.candidate_id for v in ballot.votes if v.is_valid}) if ballot.is_valid else []
-        void = [
-            ReportVoidMark(candidate_id=v.candidate_id, position_id=v.position_id, reason=v.invalid_reason or "Not counted")
-            for v in sorted(ballot.votes, key=lambda v: v.id) if not v.is_valid
-        ]
-        total_void += len(void)
+        void = sum(1 for v in ballot.votes if not v.is_valid)
+        total_void += void
         for candidate_id in counted:
             votes_for[candidate_id] += 1
         report_ballots.append(ReportBallot(
             ballot_id=ballot.id, serial=serial, ballot_paper_no=ballot.ballot_paper_no,
             pdf_filename=ballot.pdf_filename, page_number=ballot.page_number, status=ballot.status,
-            is_valid=ballot.is_valid, candidate_ids=counted, void_marks=len(void), void=void,
+            is_valid=ballot.is_valid, candidate_ids=counted, void_marks=void,
         ))
 
     report_positions = [_rank_position(p, votes_for, len(ballots)) for p in positions]
@@ -88,16 +81,6 @@ async def election_report(
     )
 
 
-def _panels(position: Position) -> dict[int, str]:
-    """Side of the ballot paper each candidate is printed on.
-
-    The ballot prints the candidates of a post two to a row in `display_order`
-    (the same order the entry form uses), so they alternate left, right, left ...
-    """
-    ordered = sorted(position.candidates, key=lambda c: (c.display_order, c.id))
-    return {c.id: "left" if index % 2 == 0 else "right" for index, c in enumerate(ordered)}
-
-
 def _rank_position(position: Position, votes_for: dict[int, int], counted_ballots: int) -> ReportPosition:
     """Rank the candidates of one post and mark who is elected.
 
@@ -113,7 +96,6 @@ def _rank_position(position: Position, votes_for: dict[int, int], counted_ballot
             rank, previous = index, votes_for[candidate.id]
         ranks.append(rank)
 
-    panels = _panels(position)
     seats = position.max_selections
     outcomes = [""] * len(candidates)
     if seats < len(candidates) and candidates:
@@ -141,7 +123,7 @@ def _rank_position(position: Position, votes_for: dict[int, int], counted_ballot
         candidates=[
             ReportCandidate(
                 candidate_id=c.id, voter_no=c.voter_no, name_en=c.name_en, name_bn=c.name_bn,
-                display_order=c.display_order, panel=panels[c.id], votes=votes_for[c.id],
+                display_order=c.display_order, votes=votes_for[c.id],
                 percentage=round(votes_for[c.id] / counted_ballots * 100, 2) if counted_ballots else 0.0,
                 rank=ranks[i], outcome=outcomes[i],
             )

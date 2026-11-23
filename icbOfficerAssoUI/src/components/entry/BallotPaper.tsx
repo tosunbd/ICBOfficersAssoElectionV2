@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, type MouseEvent } from "react";
 import type { Candidate, Position } from "@/lib/types";
 import { toBengaliDigits } from "@/lib/format";
 import { withBase } from "@/lib/basePath";
@@ -19,6 +19,10 @@ import { withBase } from "@/lib/basePath";
  * Any number of boxes can be ticked, exactly as a voter may have marked the
  * paper; boxes of a post with more marks than it allows are drawn in red
  * (null vote, not counted).
+ *
+ * Keyboard: the arrow keys move from box to box (up / down along a side,
+ * left / right to the other side); the box that has the focus is drawn with a
+ * ring, and Space or Enter ticks or clears it.
  */
 
 export type Side = "left" | "right";
@@ -85,21 +89,29 @@ function MarkBox({ on, isNull }: { on: boolean; isNull: boolean }) {
   );
 }
 
-function CandidateCells({ candidate, on, isNull, readOnly, onToggle }: {
+function CandidateCells({ candidate, on, isNull, readOnly, onToggle, row, side }: {
   candidate: Candidate | null; on: boolean; isNull: boolean; readOnly?: boolean; onToggle?: (id: number) => void;
+  /** where the box is on the paper: the arrow keys go by these */
+  row: number; side: Side;
 }) {
   if (!candidate) return <><td className="bp-name" /><td className="bp-boxcell" /></>;
   const name = candidate.name_bn ?? candidate.name_en;
   const toggle = () => { if (!readOnly) onToggle?.(candidate.id); };
+  // a click on the name ticks the box and leaves the focus on it, so the arrow keys go on from there
+  const toggleFromName = (event: MouseEvent<HTMLTableCellElement>) => {
+    if (readOnly) return;
+    toggle();
+    event.currentTarget.nextElementSibling?.querySelector<HTMLButtonElement>("button.bp-boxbtn")?.focus();
+  };
   return (
     <>
-      <td className={`bp-name ${on ? "is-on" : ""} ${isNull ? "is-null" : ""} ${readOnly ? "" : "is-clickable"}`} onClick={toggle}>
+      <td className={`bp-name ${on ? "is-on" : ""} ${isNull ? "is-null" : ""} ${readOnly ? "" : "is-clickable"}`} onClick={toggleFromName}>
         <span className="bp-voter">{toBengaliDigits(candidate.voter_no)}</span>
         <span className="bp-cname">{name}</span>
       </td>
       <td className={`bp-boxcell ${on ? "is-on" : ""} ${isNull ? "is-null" : ""}`}>
         <button
-          type="button" className="bp-boxbtn" onClick={toggle} disabled={readOnly}
+          type="button" className="bp-boxbtn" onClick={toggle} disabled={readOnly} data-row={row} data-side={side}
           role="checkbox" aria-checked={on}
           aria-label={`${candidate.voter_no} ${candidate.name_en}${isNull ? " (null vote)" : ""}`}
           title={isNull ? "Null vote: more marks than this post allows" : undefined}
@@ -156,8 +168,43 @@ export function BallotPaper({ titleBn, ballotLabel, rows, selected, nullIds, rea
     return { left: of("left"), right: of("right") };
   }, [rows, selected]);
 
+  // arrow keys: from box to box
+  const paper = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (readOnly) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+      if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+      const root = paper.current;
+      if (!root || document.querySelector('[role="dialog"]')) return;  // a question is open
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) && !target.closest(".bp-selectall")) return;
+      const boxes = Array.from(root.querySelectorAll<HTMLButtonElement>("button.bp-boxbtn:not(:disabled)"));
+      if (boxes.length === 0) return;
+      const at = (box: HTMLElement) => ({ row: Number(box.dataset.row), side: box.dataset.side });
+      const active = document.activeElement as HTMLElement | null;
+      const current = active && root.contains(active) && active.classList.contains("bp-boxbtn") ? at(active) : null;
+      let next: HTMLButtonElement | undefined;
+      if (!current) {
+        next = event.key === "ArrowUp" ? boxes[boxes.length - 1] : boxes[0];
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        const side = event.key === "ArrowLeft" ? "left" : "right";
+        next = boxes.find((box) => at(box).row === current.row && at(box).side === side);
+      } else {
+        const column = boxes.filter((box) => at(box).side === current.side);
+        next = event.key === "ArrowDown"
+          ? column.find((box) => at(box).row > current.row)
+          : column.reverse().find((box) => at(box).row < current.row);
+      }
+      event.preventDefault();  // the arrows move the focus, they do not scroll the page
+      next?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [readOnly]);
+
   return (
-    <div className={`bp ${readOnly ? "is-readonly" : ""}`} key={flashKey}>
+    <div className={`bp ${readOnly ? "is-readonly" : ""}`} key={flashKey} ref={paper}>
       {stamp && <div className="bp-stamp" aria-hidden="true">{stamp}</div>}
       <div className="bp-top">
         <div className="bp-heading">
@@ -186,11 +233,11 @@ export function BallotPaper({ titleBn, ballotLabel, rows, selected, nullIds, rea
         <tbody>
           {rows.map((row, index) => (
             <tr key={`${row.position.id}-${index}`}>
-              <CandidateCells candidate={row.left} on={!!row.left && selected.has(row.left.id)} isNull={!!row.left && nullIds.has(row.left.id)} readOnly={readOnly} onToggle={onToggle} />
+              <CandidateCells candidate={row.left} on={!!row.left && selected.has(row.left.id)} isNull={!!row.left && nullIds.has(row.left.id)} readOnly={readOnly} onToggle={onToggle} row={index} side="left" />
               {row.span > 0 && (
                 <td className={`bp-post ${row.span > 1 ? "is-merged" : ""}`} rowSpan={row.span}>{row.position.name_bn ?? row.position.name_en}</td>
               )}
-              <CandidateCells candidate={row.right} on={!!row.right && selected.has(row.right.id)} isNull={!!row.right && nullIds.has(row.right.id)} readOnly={readOnly} onToggle={onToggle} />
+              <CandidateCells candidate={row.right} on={!!row.right && selected.has(row.right.id)} isNull={!!row.right && nullIds.has(row.right.id)} readOnly={readOnly} onToggle={onToggle} row={index} side="right" />
             </tr>
           ))}
         </tbody>

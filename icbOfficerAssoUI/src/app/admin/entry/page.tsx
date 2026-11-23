@@ -1,7 +1,7 @@
 "use client";
 
 import "../../entry.css";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { errorMessage, formatDateTime } from "@/lib/format";
@@ -115,6 +115,76 @@ function RecentList({ ballots, activeNo, onPick, empty, showDesk }: {
 
 const draftKey = (username: string | null) => `icb-entry-draft-${username ?? ""}`;
 
+/**
+ * Full screen for the entry desk: the browser goes full screen and the menu
+ * and the top bar are hidden (html.entry-full in entry.css), so the screen
+ * shows only the ballot and the side panel.  Esc leaves it.
+ */
+function useFullScreen(): [boolean, () => void] {
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    const onChange = () => setFull(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+  useEffect(() => {
+    document.documentElement.classList.toggle("entry-full", full);
+    return () => document.documentElement.classList.remove("entry-full");
+  }, [full]);
+  const toggle = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    else void document.documentElement.requestFullscreen().catch(() => undefined);
+  }, []);
+  return [full, toggle];
+}
+
+/** Space kept free under the paper in full screen: the padding of the page (entry.css). */
+const FIT_GAP = 12;
+/** Width of the paper on the screen: max-width of .bp in entry.css. */
+const PAPER_WIDTH = 960;
+
+/**
+ * In full screen the whole ballot paper is on one screen: it is zoomed out
+ * until its bottom edge is on the screen, so there is nothing to scroll.
+ * Zoom, not a transform: the browser lays the paper out again at the smaller
+ * size, so every line of the table stays a whole pixel.  Outside full screen
+ * the paper is left exactly as it is.
+ */
+function FitToScreen({ active, children }: { active: boolean; children: ReactNode }) {
+  const outer = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
+
+  const fit = useCallback(() => {
+    const box = outer.current;
+    const paper = inner.current;
+    if (!box || !paper) return;
+    paper.style.zoom = "";
+    paper.style.removeProperty("--bp-fit-width");
+    if (!active || !window.matchMedia("(min-width: 1181px)").matches) return;
+    // offsets, not getBoundingClientRect: the page slides in with a transform
+    let top = 0;
+    for (let el: HTMLElement | null = box; el; el = el.offsetParent as HTMLElement | null) top += el.offsetTop;
+    const room = Math.max(240, window.innerHeight - top - FIT_GAP);
+    const natural = paper.offsetHeight;  // at full size
+    if (!natural || natural <= room) return;
+    const scale = room / natural;
+    paper.style.zoom = scale.toFixed(4);
+    // laid out wider, so the paper still shows about 960px wide where the column has the room
+    paper.style.setProperty("--bp-fit-width", `${Math.floor(PAPER_WIDTH / scale)}px`);
+  }, [active]);
+
+  // after every render: a banner or an alert over the paper moves it down
+  useLayoutEffect(fit);
+  useEffect(() => {
+    const observer = new ResizeObserver(fit);
+    if (inner.current) observer.observe(inner.current);
+    window.addEventListener("resize", fit);
+    return () => { observer.disconnect(); window.removeEventListener("resize", fit); };
+  }, [fit]);
+
+  return <div className="entry-fit" ref={outer}><div className="entry-fit-paper" ref={inner}>{children}</div></div>;
+}
+
 function EntryDesk() {
   const { token, username, fullName } = useAuth();
   const toast = useToast();
@@ -127,6 +197,7 @@ function EntryDesk() {
   const [confirm, setConfirm] = useState<"blank" | "null" | null>(null);
   const [findNo, setFindNo] = useState("");
   const restored = useRef(false);
+  const [full, toggleFull] = useFullScreen();
 
   const desk = state?.desks.find((d) => d.username === state.me) ?? null;
   const digits = state?.digits ?? 3;
@@ -318,10 +389,7 @@ function EntryDesk() {
   const edited = editing !== null && !sameIds(selected, editing.candidate_ids) && !(editing.pending && sameIds(selected, editing.pending.candidate_ids));
 
   return (
-    <div className="page">
-      <PageHeader eyebrow={`${desk.username} · ${fullName ?? desk.full_name ?? "Election Commissioner"}`} title="Ballot entry"
-        subtitle={`Your ballots: ${rangeText(desk, digits)}. Tick what is marked on the paper, then save: the next ballot comes by itself.`} />
-
+    <div className="page entry-desk">
       {loadError && <Alert type="error">Connection problem: {loadError}. Your ticks stay on the form; saving works again when the server answers.</Alert>}
       {layoutError && <Alert type="error">{layoutError}</Alert>}
       {paused && <Alert type="warning"><strong>Counting is paused by the election commission.</strong> Saving is possible again after START. What you have ticked stays on the form.</Alert>}
@@ -352,13 +420,15 @@ function EntryDesk() {
             </div>
           )}
           {!ready ? <Spinner label="Loading the ballot…" /> : (editing || !done) && (
-            <BallotPaper
-              titleBn={state.election.title_bn ?? FALLBACK_TITLE}
-              ballotLabel={currentLabel}
-              rows={rows} selected={selected} nullIds={check.nullIds}
-              onToggle={toggle} onSelectAll={selectAll}
-              flashKey={`${editing ? "edit" : "new"}-${currentNo}`}
-            />
+            <FitToScreen active={full}>
+              <BallotPaper
+                titleBn={state.election.title_bn ?? FALLBACK_TITLE}
+                ballotLabel={currentLabel}
+                rows={rows} selected={selected} nullIds={check.nullIds}
+                onToggle={toggle} onSelectAll={selectAll}
+                flashKey={`${editing ? "edit" : "new"}-${currentNo}`}
+              />
+            </FitToScreen>
           )}
         </div>
 
@@ -371,8 +441,13 @@ function EntryDesk() {
               </div>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontWeight: 700 }}>{desk.username}</div>
+                <div className="entry-now-sub">{fullName ?? desk.full_name ?? "Election Commissioner"}</div>
                 <div className="entry-now-sub">Ballots {rangeText(desk, digits)}</div>
               </div>
+              <button type="button" className="btn btn-ghost btn-sm entry-full-btn" onClick={toggleFull} aria-pressed={full}
+                title={full ? "Leave full screen (Esc)" : "Show the ballot on the full screen"}>
+                <Icon name={full ? "x" : "maximize"} size={14} /> {full ? "Exit full screen" : "Full screen"}
+              </button>
             </div>
             <div className="entry-progress" aria-label="Progress of your range"><span style={{ width: `${percent(desk)}%` }} /></div>
             <div className="entry-progress-meta"><span><strong>{desk.entered}</strong> of {desk.total} entered</span><span>{desk.total - desk.entered} to go</span></div>

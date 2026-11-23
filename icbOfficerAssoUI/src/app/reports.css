@@ -134,16 +134,6 @@
 .rpt-all tr.is-tie td:not([rowspan]) { background: #fffbeb; }
 .rpt-all tr.is-tie .rpt-result { color: #92400e; font-weight: 900; }
 
-/* ------------------------------------------- panel votes and null votes */
-.rpt-total-row td { border-top: 2.5px double var(--rule-strong); border-bottom: 0; background: #eef1f6; font-weight: 800; }
-.rpt-total-row td:first-child { text-transform: uppercase; letter-spacing: 0.08em; font-size: 7.5pt; }
-.rpt-panel-table { font-size: 9.5pt; }
-.rpt-panel-table td { padding: 1.5mm 1.6mm; }
-.rpt-null-table { table-layout: fixed; font-size: 8.5pt; }
-.rpt-null-table td { padding: 1mm 1.8mm; }
-.rpt-null-list td { overflow-wrap: anywhere; }
-.rpt-null-reason { font-size: 8pt; color: #92400e; }
-
 /* --------------------------------------------------------- ballot tally */
 .rpt-tally { border-collapse: collapse; table-layout: fixed; font-size: 7.5pt; font-variant-numeric: tabular-nums; margin: 0 auto; }
 .rpt-col-sl { width: 7mm; }

@@ -57,7 +57,7 @@ class EntryBallot(BaseModel):
 
     ballot_id: int
     ballot_no: int
-    label: str                       # "001"
+    label: str                       # "000001"
     status: str                      # processed (entered) | reviewed (corrected)
     entered_by: str | None
     entered_at: datetime | None

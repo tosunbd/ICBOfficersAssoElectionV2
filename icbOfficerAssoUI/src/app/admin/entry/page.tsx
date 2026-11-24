@@ -200,7 +200,7 @@ function EntryDesk() {
   const [full, toggleFull] = useFullScreen();
 
   const desk = state?.desks.find((d) => d.username === state.me) ?? null;
-  const digits = state?.digits ?? 3;
+  const digits = state?.digits ?? 6;
   const { positions, candidates, rows, ready, error: layoutError } = useBallotLayout(state?.election?.id ?? null);
   const currentNo = editing ? editing.ballot_no : desk?.next_ballot_no ?? null;
   const currentLabel = currentNo ? String(currentNo).padStart(digits, "0") : "";
@@ -439,7 +439,7 @@ function EntryDesk() {
                 <div className="entry-now-label">{editing ? "Correcting ballot" : done ? "Range complete" : "Now entering ballot"}</div>
                 <div className="entry-now-no">{currentLabel || "✓"}</div>
               </div>
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: "1 1 0" }}>
                 <div style={{ fontWeight: 700 }}>{desk.username}</div>
                 <div className="entry-now-sub">{fullName ?? desk.full_name ?? "Election Commissioner"}</div>
                 <div className="entry-now-sub">Ballots {rangeText(desk, digits)}</div>
@@ -576,7 +576,7 @@ function EntryMonitor() {
   const [confirmEdit, setConfirmEdit] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
 
-  const digits = state?.digits ?? 3;
+  const digits = state?.digits ?? 6;
   const { positions, candidates, rows, ready, error: layoutError } = useBallotLayout(state?.election?.id ?? null);
 
   const loadCorrections = useCallback(async () => {

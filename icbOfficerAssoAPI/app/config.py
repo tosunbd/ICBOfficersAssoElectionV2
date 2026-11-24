@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     # Which ballot paper numbers each Election Commissioner enters:
     #   username:first-last, comma separated.  Applied to the accounts on every start.
     ENTRY_RANGES: str = "EC1:1-150,EC2:151-300,EC3:301-455"
-    BALLOT_NUMBER_DIGITS: int = 3        # ballot paper numbers are shown zero-padded: 001, 002 ...
+    BALLOT_NUMBER_DIGITS: int = 6        # ballot paper numbers are six digits, as the numbering machine stamps them: 000001 ... 000455
     TOTAL_VOTERS: int = 455              # registered voters of the election created on first start
     # An entry desk counts as "online" in the monitor while it was heard from this recently
     ENTRY_ONLINE_SECONDS: int = 20

@@ -16,9 +16,9 @@ SQLite database, and the results, the dashboard and the reports follow at once.
 |---|---|---|---|
 | `SA` | `sadmin` | Super Admin | Everything: reports, results, settings, **approve corrections**, **edit any ballot**, delete a ballot, set any password, watch the entry |
 | `Admin` | `admin` | Admin | Reports, results, election set-up, **approve corrections**, **edit any ballot**, watch the entry |
-| `EC1` | `EC1` | Election Commissioner 1 | Enters ballots **001 – 150** |
-| `EC2` | `EC2` | Election Commissioner 2 | Enters ballots **151 – 300** |
-| `EC3` | `EC3` | Election Commissioner 3 | Enters ballots **301 – 455** |
+| `EC1` | `EC1` | Election Commissioner 1 | Enters ballots **000001 – 000150** |
+| `EC2` | `EC2` | Election Commissioner 2 | Enters ballots **000151 – 000300** |
+| `EC3` | `EC3` | Election Commissioner 3 | Enters ballots **000301 – 000455** |
 
 Usernames are not case sensitive; passwords are. Change the passwords under
 **Settings** before the real count (the Super Admin can set anyone's).
@@ -27,7 +27,7 @@ The number ranges are `ENTRY_RANGES` in `.env`.
 ## Ballot entry (EC1, EC2, EC3)
 
 * After signing in, a commissioner lands on the entry form with the next ballot
-  number already filled in (001, 002, 003 …). Numbers come one by one: a number
+  number already filled in (000001, 000002, 000003 …). Numbers come one by one: a number
   cannot be skipped, entered twice, or taken from another commissioner's range
   (EC1 cannot enter 160, EC2 cannot enter 320).
 * Click a box (or the candidate's name) to put the X. **Select all**, at the
@@ -83,7 +83,7 @@ Every request, approval, rejection and withdrawal is written to the audit log.
 
 ## Editing a ballot on the admin side
 
-SA and Admin can change any saved ballot of any range (001 to 455) themselves:
+SA and Admin can change any saved ballot of any range (000001 to 000455) themselves:
 **Ballots** → **Edit**, or open the ballot under **Ballot Entry · Live** and
 press **Edit**. Change the ticks and press **Save changes**. No approval step:
 the totals, the dashboard and the reports change at once, the ballot is marked

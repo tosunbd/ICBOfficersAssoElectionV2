@@ -47,8 +47,8 @@ export function roleLabel(role: string | null | undefined): string {
 
 export const isAdminRole = (role: string | null | undefined) => role === "superadmin" || role === "admin";
 
-/** 7 -> "007" */
-export function ballotLabel(ballotNo: number, digits = 3): string {
+/** 7 -> "000007" */
+export function ballotLabel(ballotNo: number, digits = 6): string {
   return String(ballotNo).padStart(digits, "0");
 }
 

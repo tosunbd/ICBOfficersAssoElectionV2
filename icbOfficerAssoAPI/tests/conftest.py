@@ -15,7 +15,7 @@ os.environ.update({
     "ELECTION_YEAR": "2026",
     "DATABASE_SETTINGS_FILE": str(TMP / "database_settings.json"),
     "ENTRY_RANGES": "EC1:1-150,EC2:151-300,EC3:301-455",
-    "BALLOT_NUMBER_DIGITS": "3",
+    "BALLOT_NUMBER_DIGITS": "6",
     "JWT_SECRET_KEY": "test-secret",
 })
 

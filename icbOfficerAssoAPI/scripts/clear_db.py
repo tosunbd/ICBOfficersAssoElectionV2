@@ -8,7 +8,7 @@ What it does, in order:
      "database_cleared" audit entry.
 
 On the next start the system creates the 2026 election again with its 13 posts
-and 30 candidates, so the entry desks begin at ballot 001 / 151 / 301.
+and 30 candidates, so the entry desks begin at ballot 000001 / 000151 / 000301.
 
 The database cleared is the one for the current election year:
 icbOfficerAssoDB<year>.db (year from Admin -> Settings -> Database, or .env).

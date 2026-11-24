@@ -151,7 +151,7 @@ export default function SettingsPage() {
                   <td>{u.full_name ?? "—"}</td>
                   <td><span className={`badge ${u.role === "superadmin" ? "badge-accent" : u.role === "admin" ? "badge-primary" : "badge-success"}`}>{roleLabel(u.role)}</span></td>
                   <td>{u.ballot_from && u.ballot_to
-                    ? <strong style={{ fontVariantNumeric: "tabular-nums" }}>{String(u.ballot_from).padStart(system?.ballot_number_digits ?? 3, "0")} – {String(u.ballot_to).padStart(system?.ballot_number_digits ?? 3, "0")}</strong>
+                    ? <strong style={{ fontVariantNumeric: "tabular-nums" }}>{String(u.ballot_from).padStart(system?.ballot_number_digits ?? 6, "0")} – {String(u.ballot_to).padStart(system?.ballot_number_digits ?? 6, "0")}</strong>
                     : <span className="text-faint">views only</span>}</td>
                   <td className="text-faint text-small">{u.last_login_at ? formatDateTime(u.last_login_at) : "never"}</td>
                   <td className="cell-actions">

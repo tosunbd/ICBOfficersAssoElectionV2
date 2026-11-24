@@ -18,7 +18,7 @@ class SystemStatus(BaseModel):
     version: str
     active_election_id: int | None
     database_file: str | None
-    entry_ranges: dict[str, str]   # {"EC1": "001-150", ...}
+    entry_ranges: dict[str, str]   # {"EC1": "000001-000150", ...}
     ballot_number_digits: int
     total_users: int
 

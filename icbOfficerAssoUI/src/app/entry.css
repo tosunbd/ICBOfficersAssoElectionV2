@@ -62,10 +62,11 @@ html.entry-full .entry-desk .entry-side { top: 12px; max-height: calc(100vh - 24
 .bp-title { font-size: clamp(0.86rem, 1.3vw, 1.16rem); font-weight: 700; line-height: 1.35; border-bottom: 1.5px solid var(--bp-line); padding-bottom: 2px; }
 .bp-number { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .bp-number-label { font-size: clamp(0.8rem, 1.2vw, 1.05rem); font-weight: 700; white-space: nowrap; }
+/* six digits (000001 ... 000455): on the printed paper this box is left empty and the numbering machine stamps the number into it */
 .bp-number-box {
-  min-width: clamp(96px, 15vw, 168px); height: clamp(44px, 5.4vw, 64px); padding: 0 12px; display: grid; place-items: center;
-  border: 2px solid var(--bp-blue); font-size: clamp(1.5rem, 3vw, 2.4rem); font-weight: 700; letter-spacing: 0.1em; color: var(--bp-ink);
-  background: #fff;
+  min-width: clamp(150px, 21vw, 236px); height: clamp(44px, 5.4vw, 64px); padding: 0 14px; display: grid; place-items: center;
+  border: 2px solid var(--bp-blue); font-size: clamp(1.3rem, 2.5vw, 2.05rem); font-weight: 700; letter-spacing: 0.12em; color: var(--bp-ink);
+  background: #fff; white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 
 .bp-table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 2.5px solid var(--bp-line); }
@@ -141,9 +142,9 @@ html.entry-full .entry-desk .entry-side { top: 12px; max-height: calc(100vh - 24
 .entry-banner.is-done { border-color: rgba(16, 185, 129, 0.45); background: var(--color-success-soft); }
 
 /* ---------- side panel ---------- */
-.entry-now { display: flex; align-items: center; gap: 16px; }
+.entry-now { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
 .entry-now-no {
-  font: 800 2.6rem/1 'JetBrains Mono', ui-monospace, monospace; letter-spacing: 0.04em;
+  font: 800 2.1rem/1 'JetBrains Mono', ui-monospace, monospace; letter-spacing: 0.02em;  /* six digits */
   background: var(--gold-foil, linear-gradient(135deg, #f5c542, #c9971c)); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .entry-now-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-text-muted); }
@@ -177,7 +178,7 @@ html.entry-full .entry-desk .entry-side { top: 12px; max-height: calc(100vh - 24
 }
 .entry-recent-item:hover { background: var(--color-bg-hover); border-color: var(--color-border); }
 .entry-recent-item.is-active { background: var(--color-primary-soft); border-color: var(--color-primary-soft-strong); }
-.entry-recent-no { font: 700 0.92rem 'JetBrains Mono', ui-monospace, monospace; min-width: 3.2em; }
+.entry-recent-no { font: 700 0.92rem 'JetBrains Mono', ui-monospace, monospace; min-width: 6ch; }
 .entry-recent-meta { flex: 1; min-width: 0; font-size: 0.76rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .entry-recent-votes { font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .entry-recent-votes em { font-style: normal; color: var(--color-error-text); }

@@ -57,18 +57,18 @@ async def test_ballots_come_one_by_one(client, login, election, ids):
     ec1 = await login("EC1")
     state = (await client.get("/api/entry/state", headers=ec1)).json()
     desk = next(d for d in state["desks"] if d["username"] == "EC1")
-    assert state["me"] == "EC1" and desk["next_ballot_no"] == 1 and desk["next_label"] == "001" and desk["total"] == 150
+    assert state["me"] == "EC1" and desk["next_ballot_no"] == 1 and desk["next_label"] == "000001" and desk["total"] == 150
 
     saved = await enter(client, ec1, 1, ids("13"))
-    assert saved["ballot"]["label"] == "001" and saved["desk"]["next_label"] == "002" and saved["desk"]["entered"] == 1
+    assert saved["ballot"]["label"] == "000001" and saved["desk"]["next_label"] == "000002" and saved["desk"]["entered"] == 1
 
     # not the next number, and a number already used
     skipped = await client.post("/api/entry/ballots", headers=ec1, json={"ballot_no": 3, "candidate_ids": []})
-    assert skipped.status_code == 409 and "002" in skipped.json()["detail"]
+    assert skipped.status_code == 409 and "000002" in skipped.json()["detail"]
     again = await client.post("/api/entry/ballots", headers=ec1, json={"ballot_no": 1, "candidate_ids": []})
     assert again.status_code == 409 and "already entered" in again.json()["detail"]
 
-    assert (await enter(client, ec1, 2, []))["desk"]["next_label"] == "003"  # a blank paper is a ballot too
+    assert (await enter(client, ec1, 2, []))["desk"]["next_label"] == "000003"  # a blank paper is a ballot too
 
 
 @pytest.mark.parametrize("username,first,outside", [("EC1", 1, 160), ("EC2", 151, 320), ("EC2", 151, 150), ("EC3", 301, 300), ("EC3", 301, 456)])
@@ -169,13 +169,13 @@ async def test_a_blank_ballot_is_counted_with_no_votes(client, login, election, 
     ec1, admin = await login("EC1"), await login("Admin")
     saved = await enter(client, ec1, 1, [])
     assert saved["ballot"]["counted"] == 0 and saved["ballot"]["null_marks"] == 0 and saved["ballot"]["candidate_ids"] == []
-    assert saved["desk"]["next_label"] == "002" and saved["desk"]["entered"] == 1
+    assert saved["desk"]["next_label"] == "000002" and saved["desk"]["entered"] == 1
     await enter(client, ec1, 2, ids("13"))
     data = (await client.get(f"/api/dashboard/results/{election['id']}", headers=admin)).json()
     assert data["stats"]["counted_ballots"] == 2                     # the blank paper is a ballot
     assert sum(c["vote_count"] for p in data["positions"] for c in p["candidates"]) == 1
     report = (await client.get(f"/api/reports/{election['id']}", headers=admin)).json()
-    assert [(b["ballot_paper_no"], b["candidate_ids"]) for b in report["ballots"]] == [("001", []), ("002", ids("13"))]
+    assert [(b["ballot_paper_no"], b["candidate_ids"]) for b in report["ballots"]] == [("000001", []), ("000002", ids("13"))]
     assert report["stats"]["counted_ballots"] == 2 and report["total_votes"] == 1
 
 
@@ -200,7 +200,7 @@ async def test_a_correction_counts_only_after_approval(client, login, election, 
     state = (await client.get("/api/entry/state", headers=admin)).json()
     assert state["pending_corrections"] == 1
     waiting = (await client.get("/api/entry/corrections", headers=sa)).json()
-    assert [(c["label"], c["requested_by"]) for c in waiting] == [("001", "EC1")]
+    assert [(c["label"], c["requested_by"]) for c in waiting] == [("000001", "EC1")]
     assert (await client.get("/api/entry/corrections", headers=ec2)).json() == []  # not EC2's range
     for headers in (ec1, ec2):
         assert (await client.post(f"/api/entry/corrections/{pending['id']}/approve", headers=headers)).status_code == 403
@@ -337,12 +337,12 @@ async def test_admins_see_the_desk_live(client, login, election, ids):
     response = await client.put("/api/entry/draft", headers=ec2, json={"ballot_no": 151, "candidate_ids": ids("13", "30")})
     assert response.status_code == 204
     desks = {d["username"]: d for d in (await client.get("/api/entry/state", headers=admin)).json()["desks"]}
-    assert desks["EC2"]["online"] and desks["EC2"]["draft"]["label"] == "151"
+    assert desks["EC2"]["online"] and desks["EC2"]["draft"]["label"] == "000151"
     assert desks["EC2"]["draft"]["candidate_ids"] == sorted(ids("13", "30"))
     assert not desks["EC1"]["online"] and desks["EC1"]["draft"] is None
     await enter(client, ec2, 151, ids("13", "30"))
     desks = {d["username"]: d for d in (await client.get("/api/entry/state", headers=admin)).json()["desks"]}
-    assert desks["EC2"]["draft"] is None and desks["EC2"]["last_label"] == "151"
+    assert desks["EC2"]["draft"] is None and desks["EC2"]["last_label"] == "000151"
     assert (await client.put("/api/entry/draft", headers=ec2, json={"ballot_no": 5, "candidate_ids": []})).status_code == 403
 
 
@@ -353,7 +353,7 @@ async def test_report_follows_every_saved_ballot(client, login, election, ids):
     await enter(client, ec1, 2, ids("13", "12"))                          # two presidents: null
     report = (await client.get(f"/api/reports/{election['id']}", headers=admin)).json()
     assert report["stats"]["counted_ballots"] == 3 and report["total_voters"] == 455
-    assert [b["ballot_paper_no"] for b in report["ballots"]] == ["001", "002", "301"]  # in ballot number order
+    assert [b["ballot_paper_no"] for b in report["ballots"]] == ["000001", "000002", "000301"]  # in ballot number order
     assert report["total_votes"] == 5 and report["void_marks"] == 6 and report["manual_ballots"] == 0
     president = report["positions"][0]["candidates"]
     assert {c["voter_no"]: c["votes"] for c in president} == {"13": 1, "12": 1}

@@ -146,7 +146,7 @@ function HeadCell({ side, state, readOnly, onSelectAll }: {
 
 export function BallotPaper({ titleBn, ballotLabel, rows, selected, nullIds, readOnly, onToggle, onSelectAll, stamp, flashKey }: {
   titleBn: string;
-  /** "001"; empty = no paper on the desk */
+  /** "000001"; empty = no paper on the desk */
   ballotLabel: string;
   rows: BallotRow[];
   selected: ReadonlySet<number>;

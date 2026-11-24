@@ -31,8 +31,8 @@ class Ballot(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     election_id: Mapped[int] = mapped_column(Integer, ForeignKey("elections.id"), nullable=False)
     ballot_no: Mapped[int | None] = mapped_column(Integer, nullable=True)          # 1, 2, 3 ... as printed on the paper
-    ballot_paper_no: Mapped[str | None] = mapped_column(String(50), nullable=True)  # the same, zero-padded: "001"
-    pdf_filename: Mapped[str] = mapped_column(String(500), nullable=False)          # label, e.g. "Ballot 001"
+    ballot_paper_no: Mapped[str | None] = mapped_column(String(50), nullable=True)  # the same, six digits: "000001"
+    pdf_filename: Mapped[str] = mapped_column(String(500), nullable=False)          # label, e.g. "Ballot 000001"
     page_number: Mapped[int] = mapped_column(Integer, default=1)
     source: Mapped[str] = mapped_column(String(20), default="entry")
     original_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)

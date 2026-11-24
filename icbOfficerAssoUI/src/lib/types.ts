@@ -173,7 +173,7 @@ export interface SystemStatus {
   version: string;
   active_election_id: number | null;
   database_file: string | null;
-  /** {"EC1": "001-150", ...} */
+  /** {"EC1": "000001-000150", ...} */
   entry_ranges: Record<string, string>;
   ballot_number_digits: number;
   total_users: number;
@@ -309,7 +309,7 @@ export interface DecisionResult {
 export interface EntryBallot {
   ballot_id: number;
   ballot_no: number;
-  label: string;                 // "001"
+  label: string;                 // "000001"
   status: BallotStatus;          // processed (entered) | reviewed (corrected)
   entered_by: string | null;
   entered_at: string | null;

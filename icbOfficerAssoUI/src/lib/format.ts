@@ -56,3 +56,19 @@ const BN_DIGITS = "০১২৩৪৫৬৭৮৯";
 export function toBengaliDigits(value: number | string): string {
   return String(value).replace(/\d/g, (d) => BN_DIGITS[Number(d)]);
 }
+
+/** "১২৩" / "১2৩" -> "123": Bangla digits (০-৯) become English ones, everything else is kept. */
+export function toEnglishDigits(value: string): string {
+  return value.replace(/[০-৯]/g, (d) => String(BN_DIGITS.indexOf(d)));
+}
+
+/** Only the digits of what was typed, in English: " ১২-3 " -> "123". */
+export function digitsOnly(value: string): string {
+  return toEnglishDigits(value).replace(/\D/g, "");
+}
+
+/** Number typed with Bangla and/or English digits ("১২", "12", "১2"); null when it is not a whole number. */
+export function parseNumber(value: string): number | null {
+  const text = toEnglishDigits(value).trim();
+  return /^-?\d+$/.test(text) ? Number(text) : null;
+}

@@ -371,3 +371,37 @@ async def test_report_follows_every_saved_ballot(client, login, election, ids):
     hidden = (await client.get(f"/api/dashboard/results/{election['id']}")).json()
     assert hidden["positions"] == [] and hidden["stats"]["counted_ballots"] == 3
     await client.put(f"/api/admin/dashboard/{election['id']}/publish?publish=true", headers=admin)
+
+
+async def test_a_save_sent_twice_is_one_ballot(client, login, election, ids):
+    """The answer to a save was lost on the network and the desk sends it again."""
+    ec1, sa = await login("EC1"), await login("SA")
+    first = await enter(client, ec1, 1, ids("13", "20"))
+    again = await enter(client, ec1, 1, ids("20", "13"))             # the same paper, the same ticks
+    assert again["ballot"]["ballot_id"] == first["ballot"]["ballot_id"]
+    assert again["desk"]["entered"] == 1 and again["desk"]["next_label"] == "000002"
+    counted = await votes(client, sa, election["id"])
+    assert counted["13"] == 1 and counted["20"] == 1                 # counted once
+    # other ticks under the same number are refused: the saved ballot is not touched
+    other = await client.post("/api/entry/ballots", headers=ec1, json={"ballot_no": 1, "candidate_ids": ids("12")})
+    assert other.status_code == 409 and "already entered" in other.json()["detail"]
+
+
+async def test_health_and_backup(client, tmp_path, monkeypatch):
+    import sqlite3
+
+    from app.config import settings
+    from app.services.backup import backup_now
+
+    health = await client.get("/api/health")
+    assert health.status_code == 200 and health.json()["status"] == "healthy"
+
+    monkeypatch.setattr(settings, "BACKUP_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "BACKUP_KEEP", 2)
+    copies = [await backup_now(f"test{i}") for i in range(3)]
+    assert all(copies)
+    kept = sorted(p.name for p in tmp_path.iterdir())
+    assert len(kept) == 2 and copies[-1].name in kept                # the oldest copy is removed
+    with sqlite3.connect(copies[-1]) as copy:
+        assert copy.execute("SELECT COUNT(*) FROM admin_users").fetchone()[0] == 5
+    copy.close()

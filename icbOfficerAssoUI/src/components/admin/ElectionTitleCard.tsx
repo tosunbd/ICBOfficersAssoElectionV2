@@ -8,7 +8,7 @@ import type { Election } from "@/lib/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useElection } from "@/hooks/useElection";
 import { useToast } from "@/components/ui/Toast";
-import { CardHead, EmptyState } from "@/components/ui/Basics";
+import { CardHead, EmptyState, NumberInput } from "@/components/ui/Basics";
 import { Icon } from "@/components/ui/Icon";
 import { DEFAULT_COUNCIL_NO, bengaliOrdinal, buildTitleBn, buildTitleEn, englishOrdinal, parseCouncilNo, toBengaliDigits } from "@/lib/electionTitle";
 
@@ -59,18 +59,16 @@ function TitleForm({ election }: { election: Election }) {
       <div className="form-grid form-grid-3">
         <div className="input-group"><label className="input-label" htmlFor="st-council">Council no.</label>
           <div className="input-wrap"><Icon name="hash" size={16} />
-            <input id="st-council" className="input" type="number" min={1} value={councilNo}
-              onChange={(e) => setCouncilNo(Math.max(0, Number(e.target.value)))} /></div>
+            <NumberInput id="st-council" className="input" value={councilNo}
+              onChange={(n) => setCouncilNo(Math.max(0, n))} /></div>
           <span className="input-hint">{councilNo >= 1 ? `${englishOrdinal(councilNo)} · ${bengaliOrdinal(councilNo)}` : "At least 1"}</span></div>
         <div className="input-group"><label className="input-label" htmlFor="st-year">Year</label>
           <div className="input-wrap"><Icon name="clock" size={16} />
-            <input id="st-year" className="input" type="number" min={1900} max={2100} value={year}
-              onChange={(e) => setYear(Number(e.target.value))} /></div>
+            <NumberInput id="st-year" className="input" value={year} onChange={setYear} /></div>
           <span className="input-hint text-bengali">{toBengaliDigits(year)}</span></div>
         <div className="input-group"><label className="input-label" htmlFor="st-voters">Total voters</label>
           <div className="input-wrap"><Icon name="users" size={16} />
-            <input id="st-voters" className="input" type="number" min={1} value={voters}
-              onChange={(e) => setVoters(Number(e.target.value))} /></div>
+            <NumberInput id="st-voters" className="input" value={voters} onChange={setVoters} /></div>
           <span className="input-hint">Used for the turnout figure</span></div>
       </div>
 

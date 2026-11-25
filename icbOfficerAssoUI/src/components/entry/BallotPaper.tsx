@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
 import type { Candidate, Position } from "@/lib/types";
 import { toBengaliDigits } from "@/lib/format";
 import { withBase } from "@/lib/basePath";
@@ -12,6 +13,12 @@ import { withBase } from "@/lib/basePath";
  * the middle and a box beside every name, the instructions underneath and the
  * bar code at the bottom centre.  QR code and bar code are the pictures of the
  * printed paper (the same on every ballot: "ICBOA-20-2026").
+ *
+ * Ballot paper number: six digits, 000001 to 000455.  The paper is printed
+ * with the number box EMPTY and the number is stamped into it by hand with an
+ * automatic numbering machine, so the box is as large as the stamp needs
+ * (50 mm x 16 mm on the printed blank ballot, see PrintBlankBallot) and the
+ * form shows the number in the same figures the machine stamps: 000001.
  *
  * Added for entry: a "Select all" tick at the right of each
  * "ভোটার নং ও প্রার্থীর নাম" heading, above the boxes of that side.
@@ -214,7 +221,8 @@ export function BallotPaper({ titleBn, ballotLabel, rows, selected, nullIds, rea
         </div>
         <div className="bp-number">
           <span className="bp-number-label">ব্যালট পেপার নং</span>
-          <span className="bp-number-box" title={ballotLabel ? `Ballot paper ${ballotLabel}` : undefined}>{ballotLabel ? toBengaliDigits(ballotLabel) : ""}</span>
+          {/* empty on the printed paper: the numbering machine stamps the six digits here */}
+          <span className="bp-number-box" title={ballotLabel ? `Ballot paper ${ballotLabel}` : "The six-digit number is stamped here with the numbering machine"}>{ballotLabel}</span>
         </div>
       </div>
 
@@ -258,5 +266,38 @@ export function BallotPaper({ titleBn, ballotLabel, rows, selected, nullIds, rea
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img className="bp-barcode" src={withBase("/ballot-barcode.png")} alt="Bar code of the ballot paper" />
     </div>
+  );
+}
+
+/**
+ * "Print blank ballot": the paper on A4 with every box empty and the number
+ * box left free for the numbering machine (six digits, 000001 ...).  The copy
+ * to print is rendered straight under <body>; entry.css hides the rest of the
+ * page on paper.
+ */
+export function PrintBlankBallot({ titleBn, rows, className = "btn btn-ghost" }: { titleBn: string; rows: BallotRow[]; className?: string }) {
+  const [printing, setPrinting] = useState(false);
+  useEffect(() => {
+    if (!printing) return;
+    const done = () => setPrinting(false);
+    window.addEventListener("afterprint", done);
+    const timer = setTimeout(() => window.print(), 200);  // after the copy is painted
+    return () => { clearTimeout(timer); window.removeEventListener("afterprint", done); };
+  }, [printing]);
+  const none = useMemo(() => new Set<number>(), []);
+  return (
+    <>
+      <button type="button" className={className} onClick={() => setPrinting(true)} disabled={rows.length === 0 || printing}
+        title="Print the ballot paper with the number box empty, for the numbering machine">
+        Print blank ballot
+      </button>
+      {printing && createPortal(
+        <div className="bp-print-root">
+          <style>{"@page { size: A4 portrait; margin: 10mm 12mm; }"}</style>
+          <BallotPaper titleBn={titleBn} ballotLabel="" rows={rows} selected={none} nullIds={none} readOnly />
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }

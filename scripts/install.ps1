@@ -10,9 +10,14 @@
 #   3. Node.js >= <NodeMinVersion> - the one on PATH if new enough, otherwise
 #      the current LTS is unpacked into tools\node (nothing system-wide)
 #   4. UI packages + production build (served under <IisAppPath>)
-#   5. IIS (+ URL Rewrite, Application Request Routing) with an application
-#      <IisSite><IisAppPath> that forwards to the API (:8000) and UI (:3000)
-#   6. Windows Firewall rules for port 80 (pages) and 8000 (live stream)
+#   5. Windows Firewall rules so other PCs on the intranet reach this one:
+#      port 3000 (the pages), 8000 (API / live stream) and 80 (IIS)
+#   6. Laptop power settings: no sleep on mains power, closing the lid does
+#      nothing (the count must not stop because the lid was closed)
+#   7. IIS (+ URL Rewrite, Application Request Routing) with an application
+#      <IisSite><IisAppPath> that forwards to the API (:8000) and UI (:3000).
+#      Optional extra: when IIS cannot be set up the installation still
+#      succeeds and the system is used on port 3000.
 #
 # Afterwards start the system with "1. Start.bat".
 
@@ -23,7 +28,8 @@ param(
     [string]$IisSite = "Default Web Site",
     [string]$IisAppPath = "/election",
     [switch]$SkipIis,
-    [switch]$RecreateVenv
+    [switch]$RecreateVenv,
+    [switch]$SkipPowerSettings
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,11 +49,27 @@ $uiPort = 3000
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) { throw "Run '0. install.bat' as administrator (it is needed for IIS, the firewall and the Python installer)." }
 
+# A running system would lock the files that are replaced below
+& "$PSScriptRoot\stop-local.ps1" -Quiet
+
 function Save-Download([string]$url, [string]$fileName) {
     $target = Join-Path $downloads $fileName
     if (Test-Path $target) { return $target }
     Write-Host "    downloading $url"
-    Invoke-WebRequest -Uri $url -OutFile "$target.part" -UseBasicParsing
+    # Download servers sometimes answer with a passing error (400/5xx): try a few times
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            Invoke-WebRequest -Uri $url -OutFile "$target.part" -UseBasicParsing
+            break
+        } catch {
+            Remove-Item "$target.part" -Force -ErrorAction SilentlyContinue
+            if ($attempt -ge 4) {
+                throw "Download failed after $attempt attempts: $url - $($_.Exception.Message) (check the internet connection, or download the file yourself into $target)"
+            }
+            Write-Host "    attempt $attempt failed ($($_.Exception.Message)) - retrying in $($attempt * 5) s" -ForegroundColor Yellow
+            Start-Sleep -Seconds ($attempt * 5)
+        }
+    }
     Move-Item "$target.part" $target -Force
     return $target
 }
@@ -194,9 +216,13 @@ if ($systemNode -and (Get-NodeVersion $systemNode.Source) -ge [version]$NodeMinV
 } else {
     if ($systemNode) { Write-Host "    $($systemNode.Source) is too old (v$(Get-NodeVersion $systemNode.Source)) - it is left as it is" }
     Write-Host "    installing the current Node.js LTS into tools\node (for this project only)"
-    $release = Invoke-RestMethod "https://nodejs.org/dist/index.json" |
-        Where-Object { $_.lts -and $_.files -contains "win-x64-zip" } | Select-Object -First 1
-    $v = $release.version
+    # Assign first: Windows PowerShell 5.1 passes Invoke-RestMethod's JSON array
+    # down a pipeline as ONE object, so filtering it directly picks the whole list
+    $releases = Invoke-RestMethod "https://nodejs.org/dist/index.json"
+    $release = @($releases) | ForEach-Object { $_ } |
+        Where-Object { $_.lts -and @($_.files) -contains "win-x64-zip" } | Select-Object -First 1
+    $v = "$($release.version)"
+    if ($v -notmatch '^v\d+\.\d+\.\d+$') { throw "Could not find the current Node.js LTS version on nodejs.org (got '$v')" }
     $zipName = "node-$v-win-x64.zip"
     $zip = Save-Download "https://nodejs.org/dist/$v/$zipName" $zipName
     $sums = (Invoke-WebRequest -Uri "https://nodejs.org/dist/$v/SHASUMS256.txt" -UseBasicParsing).Content
@@ -232,9 +258,18 @@ if ($envLines -match '^NEXT_PUBLIC_BASE_PATH=') {
 } else {
     $envLines += "NEXT_PUBLIC_BASE_PATH=$basePath"
 }
+# A secret of its own for this PC (signs the logins); the sample value is never kept
+if (-not ($envLines -match '^JWT_SECRET_KEY=') -or ($envLines -match '^JWT_SECRET_KEY=\s*(change-me.*)?$')) {
+    $bytes = New-Object byte[] 48
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $secret = -join ($bytes | ForEach-Object { $_.ToString("x2") })
+    if ($envLines -match '^JWT_SECRET_KEY=') { $envLines = $envLines -replace '^JWT_SECRET_KEY=.*$', "JWT_SECRET_KEY=$secret" }
+    else { $envLines += "JWT_SECRET_KEY=$secret" }
+    Write-Host "==> Created a login secret for this PC (JWT_SECRET_KEY in .env)" -ForegroundColor Cyan
+}
 [IO.File]::WriteAllLines((Join-Path $root ".env"), [string[]]$envLines, (New-Object Text.UTF8Encoding($false)))
 
-foreach ($d in @("data")) {
+foreach ($d in @("data", "data\logs", "data\Backups")) {
     New-Item -ItemType Directory -Force -Path $d | Out-Null
 }
 
@@ -245,95 +280,130 @@ if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm install failed" }
 Pop-Location
 Invoke-UiBuild $root
 
-# --------------------------------------------------------------------- 5. IIS
-if (-not $SkipIis) {
-    Write-Host "==> IIS: publishing http://<this-pc>$IisAppPath" -ForegroundColor Cyan
-    $appcmd = Join-Path $env:windir "System32\inetsrv\appcmd.exe"
-    if (-not (Get-Service W3SVC -ErrorAction SilentlyContinue)) {
-        Write-Host "    enabling the IIS web server (Windows feature)"
-        Enable-WindowsOptionalFeature -Online -All -NoRestart -FeatureName IIS-WebServerRole, IIS-WebServer, IIS-RequestFiltering, IIS-ManagementConsole | Out-Null
-    }
-
-    $modulesAdded = $false
-    if (-not (Test-Path (Join-Path $env:windir "System32\inetsrv\rewrite.dll"))) {
-        Install-Msi (Save-Download "https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_en-US.msi" "rewrite_amd64_en-US.msi") "IIS URL Rewrite 2.1"
-        $modulesAdded = $true
-    } else { Write-Host "    URL Rewrite already installed" }
-    if (-not (Test-Path (Join-Path $env:ProgramFiles "IIS\Application Request Routing\requestRouter.dll"))) {
-        Install-Msi (Save-Download "https://download.microsoft.com/download/E/9/8/E9849D6A-020E-47E4-9FD0-A023E99B54EB/requestRouter_amd64.msi" "requestRouter_amd64.msi") "IIS Application Request Routing 3.0"
-        $modulesAdded = $true
-    } else { Write-Host "    Application Request Routing already installed" }
-
-    function Invoke-AppCmd {
-        $ErrorActionPreference = "Continue"
-        $out = & $appcmd @args 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "appcmd $($args -join ' ') failed: $out" }
-        return $out
-    }
-    # True when IIS has a site / apppool / app with exactly this name
-    # ("appcmd list app <name>" also succeeds for names that do not exist).
-    function Test-IisObject([string]$kind, [string]$name) {
-        $ErrorActionPreference = "Continue"
-        # <appcmd><APP APP.NAME="Default Web Site/election" .../></appcmd>
-        [xml]$listing = (& $appcmd list $kind /xml 2>$null) -join "`n"
-        $attribute = "$($kind.ToUpper()).NAME"
-        return [bool]($listing.appcmd.ChildNodes | Where-Object { $_.GetAttribute($attribute) -ieq $name })
-    }
-
-    # Reverse proxy on (only rules that forward to another server use it, so
-    # existing sites are unaffected); no response buffering so the live
-    # screen's event stream reaches the browser at once.
-    Invoke-AppCmd set config "-section:system.webServer/proxy" /enabled:"True" /responseBufferLimit:"0" /timeout:"00:05:00" /commit:apphost | Out-Null
-
-    if (-not (Test-IisObject site $IisSite)) { throw "IIS site '$IisSite' does not exist - set IIS_SITE in '0. install.bat'" }
-
-    # The application folder only holds web.config (the proxy rules)
-    $appDir = Join-Path $env:SystemDrive "inetpub\icb-election"
-    New-Item -ItemType Directory -Force -Path $appDir | Out-Null
-    $config = (Get-Content (Join-Path $root "deploy\iis\web.config") -Raw).
-        Replace("__API_PORT__", "$apiPort").Replace("__UI_PORT__", "$uiPort").Replace("__APP_PATH__", $IisAppPath)
-    [IO.File]::WriteAllText((Join-Path $appDir "web.config"), $config, (New-Object Text.UTF8Encoding($false)))
-
-    $pool = "ICBElection"
-    if (-not (Test-IisObject apppool $pool)) {
-        Invoke-AppCmd add apppool /name:"$pool" /managedRuntimeVersion:"" | Out-Null
-        Write-Host "    created application pool $pool"
-    }
-    $appId = "$IisSite$IisAppPath"
-    if (-not (Test-IisObject app $appId)) {
-        Invoke-AppCmd add app /site.name:"$IisSite" /path:"$IisAppPath" /physicalPath:"$appDir" /applicationPool:"$pool" | Out-Null
-        Write-Host "    created application $appId"
-    } else {
-        Invoke-AppCmd set app "$appId" /applicationPool:"$pool" | Out-Null
-        Invoke-AppCmd set vdir "$appId/" /physicalPath:"$appDir" | Out-Null
-        Write-Host "    updated application $appId"
-    }
-    # Ballot uploads can be large (default IIS limit is 30 MB)
-    Invoke-AppCmd set config "$appId" "-section:system.webServer/security/requestFiltering" /requestLimits.maxAllowedContentLength:1073741824 /allowDoubleEscaping:"True" /commit:apphost | Out-Null
-
-    if ($modulesAdded) {
-        Write-Host "    restarting IIS to load the new modules"
-        Restart-Service W3SVC -Force
-    }
-    if ((Get-Service W3SVC).Status -ne "Running") { Start-Service W3SVC }
-
-    # ---------------------------------------------------------- 6. Firewall
-    # 80 = the pages through IIS; 8000 = the live screen's event stream, which
-    # the browser opens straight to the API (the IIS proxy would hold it back)
-    Write-Host "==> Windows Firewall: allowing ports 80 and $apiPort from the LAN" -ForegroundColor Cyan
-    foreach ($rule in @(@{ Name = "ICB Election System (HTTP 80)"; Port = 80 }, @{ Name = "ICB Election System (live stream $apiPort)"; Port = $apiPort })) {
-        if (-not (Get-NetFirewallRule -DisplayName $rule.Name -ErrorAction SilentlyContinue)) {
+# ---------------------------------------------------------------- 5. Firewall
+# 3000 = the pages, 8000 = the API and the live screen's event stream (the
+# browsers of the other PCs open both), 80 = the same pages through IIS
+Write-Host "==> Windows Firewall: allowing ports $uiPort, $apiPort and 80 from the intranet" -ForegroundColor Cyan
+foreach ($rule in @(
+        @{ Name = "ICB Election System (pages $uiPort)"; Port = $uiPort },
+        @{ Name = "ICB Election System (live stream $apiPort)"; Port = $apiPort },
+        @{ Name = "ICB Election System (HTTP 80)"; Port = 80 })) {
+    try {
+        $existing = Get-NetFirewallRule -DisplayName $rule.Name -ErrorAction SilentlyContinue
+        if (-not $existing) {
             New-NetFirewallRule -DisplayName $rule.Name -Direction Inbound -Protocol TCP -LocalPort $rule.Port -Action Allow -Profile Any | Out-Null
             Write-Host "    added rule '$($rule.Name)'"
-        } else { Write-Host "    rule '$($rule.Name)' already exists" }
+        } else {
+            $existing | Set-NetFirewallRule -Enabled True -Action Allow -Profile Any
+            Write-Host "    rule '$($rule.Name)' already exists"
+        }
+    } catch {
+        Write-Host "    could not add the rule '$($rule.Name)': $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "    Other PCs may not reach this one until TCP port $($rule.Port) is allowed in the firewall." -ForegroundColor Yellow
+    }
+}
+
+# ------------------------------------------------------------ 6. Power (laptop)
+if (-not $SkipPowerSettings) {
+    Write-Host "==> Power settings: no sleep on mains power, closing the lid does nothing" -ForegroundColor Cyan
+    $ErrorActionPreference = "Continue"
+    powercfg /change standby-timeout-ac 0 2>$null | Out-Null
+    powercfg /change hibernate-timeout-ac 0 2>$null | Out-Null
+    powercfg /change disk-timeout-ac 0 2>$null | Out-Null
+    # lid close action: 0 = do nothing (mains and battery)
+    powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0 2>$null | Out-Null
+    powercfg /setdcvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0 2>$null | Out-Null
+    powercfg /setactive SCHEME_CURRENT 2>$null | Out-Null
+    $ErrorActionPreference = "Stop"
+    Write-Host "    done (while the system runs, '1. Start.bat' also keeps the PC awake on battery)"
+}
+
+# --------------------------------------------------------------------- 7. IIS
+$iisReady = $false
+if (-not $SkipIis) {
+    try {
+        Write-Host "==> IIS: publishing http://<this-pc>$IisAppPath" -ForegroundColor Cyan
+        $appcmd = Join-Path $env:windir "System32\inetsrv\appcmd.exe"
+        if (-not (Get-Service W3SVC -ErrorAction SilentlyContinue)) {
+            Write-Host "    enabling the IIS web server (Windows feature)"
+            Enable-WindowsOptionalFeature -Online -All -NoRestart -FeatureName IIS-WebServerRole, IIS-WebServer, IIS-RequestFiltering, IIS-ManagementConsole | Out-Null
+        }
+
+        $modulesAdded = $false
+        if (-not (Test-Path (Join-Path $env:windir "System32\inetsrv\rewrite.dll"))) {
+            Install-Msi (Save-Download "https://download.microsoft.com/download/1/2/8/128E2E22-C1B9-44A4-BE2A-5859ED1D4592/rewrite_amd64_en-US.msi" "rewrite_amd64_en-US.msi") "IIS URL Rewrite 2.1"
+            $modulesAdded = $true
+        } else { Write-Host "    URL Rewrite already installed" }
+        if (-not (Test-Path (Join-Path $env:ProgramFiles "IIS\Application Request Routing\requestRouter.dll"))) {
+            Install-Msi (Save-Download "https://download.microsoft.com/download/E/9/8/E9849D6A-020E-47E4-9FD0-A023E99B54EB/requestRouter_amd64.msi" "requestRouter_amd64.msi") "IIS Application Request Routing 3.0"
+            $modulesAdded = $true
+        } else { Write-Host "    Application Request Routing already installed" }
+
+        function Invoke-AppCmd {
+            $ErrorActionPreference = "Continue"
+            $out = & $appcmd @args 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "appcmd $($args -join ' ') failed: $out" }
+            return $out
+        }
+        # True when IIS has a site / apppool / app with exactly this name
+        # ("appcmd list app <name>" also succeeds for names that do not exist).
+        function Test-IisObject([string]$kind, [string]$name) {
+            $ErrorActionPreference = "Continue"
+            # <appcmd><APP APP.NAME="Default Web Site/election" .../></appcmd>
+            [xml]$listing = (& $appcmd list $kind /xml 2>$null) -join "`n"
+            $attribute = "$($kind.ToUpper()).NAME"
+            return [bool]($listing.appcmd.ChildNodes | Where-Object { $_.GetAttribute($attribute) -ieq $name })
+        }
+
+        # Reverse proxy on (only rules that forward to another server use it, so
+        # existing sites are unaffected); no response buffering so the live
+        # screen's event stream reaches the browser at once.
+        Invoke-AppCmd set config "-section:system.webServer/proxy" /enabled:"True" /responseBufferLimit:"0" /timeout:"00:05:00" /commit:apphost | Out-Null
+
+        if (-not (Test-IisObject site $IisSite)) { throw "IIS site '$IisSite' does not exist - set IIS_SITE in '0. install.bat'" }
+
+        # The application folder only holds web.config (the proxy rules)
+        $appDir = Join-Path $env:SystemDrive "inetpub\icb-election"
+        New-Item -ItemType Directory -Force -Path $appDir | Out-Null
+        $config = (Get-Content (Join-Path $root "deploy\iis\web.config") -Raw).
+            Replace("__API_PORT__", "$apiPort").Replace("__UI_PORT__", "$uiPort").Replace("__APP_PATH__", $IisAppPath)
+        [IO.File]::WriteAllText((Join-Path $appDir "web.config"), $config, (New-Object Text.UTF8Encoding($false)))
+
+        $pool = "ICBElection"
+        if (-not (Test-IisObject apppool $pool)) {
+            Invoke-AppCmd add apppool /name:"$pool" /managedRuntimeVersion:"" | Out-Null
+            Write-Host "    created application pool $pool"
+        }
+        $appId = "$IisSite$IisAppPath"
+        if (-not (Test-IisObject app $appId)) {
+            Invoke-AppCmd add app /site.name:"$IisSite" /path:"$IisAppPath" /physicalPath:"$appDir" /applicationPool:"$pool" | Out-Null
+            Write-Host "    created application $appId"
+        } else {
+            Invoke-AppCmd set app "$appId" /applicationPool:"$pool" | Out-Null
+            Invoke-AppCmd set vdir "$appId/" /physicalPath:"$appDir" | Out-Null
+            Write-Host "    updated application $appId"
+        }
+        # Ballot uploads can be large (default IIS limit is 30 MB)
+        Invoke-AppCmd set config "$appId" "-section:system.webServer/security/requestFiltering" /requestLimits.maxAllowedContentLength:1073741824 /allowDoubleEscaping:"True" /commit:apphost | Out-Null
+
+        if ($modulesAdded) {
+            Write-Host "    restarting IIS to load the new modules"
+            Restart-Service W3SVC -Force
+        }
+        if ((Get-Service W3SVC).Status -ne "Running") { Start-Service W3SVC }
+        $iisReady = $true
+    } catch {
+        Write-Host "    IIS could not be set up: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "    This is not a problem: the system works without IIS on port $uiPort (addresses below)." -ForegroundColor Yellow
     }
 }
 
 Write-Host ""
 Write-Host "Installation complete.  Start the system with  1. Start.bat" -ForegroundColor Green
-if (-not $SkipIis) {
-    foreach ($ip in Get-LanAddresses) {
-        Write-Host "    Admin panel:      http://$ip$IisAppPath/admin" -ForegroundColor Green
-        Write-Host "    Public dashboard: http://$ip$IisAppPath/dashboard" -ForegroundColor Green
-    }
+Write-Host "It will then be reached at:" -ForegroundColor Green
+Write-Host "    On this PC:      http://localhost:$uiPort$basePath/admin      http://localhost:$uiPort$basePath/dashboard" -ForegroundColor Green
+foreach ($ip in Get-LanAddresses) {
+    Write-Host "    From other PCs:  http://${ip}:$uiPort$basePath/admin      http://${ip}:$uiPort$basePath/dashboard" -ForegroundColor Green
+    if ($iisReady) { Write-Host "       (through IIS)  http://$ip$basePath/admin      http://$ip$basePath/dashboard" -ForegroundColor DarkGreen }
 }
+Write-Host "'1. Start.bat' shows these addresses again every time it starts." -ForegroundColor Green

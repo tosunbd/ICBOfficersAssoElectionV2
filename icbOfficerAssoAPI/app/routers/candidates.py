@@ -13,6 +13,7 @@ from app.models.admin_user import AdminUser
 from app.schemas.candidate import CandidateBulkCreate, CandidateCreate, CandidateResponse, CandidateUpdate
 from app.services.events import notifier
 from app.utils import audit
+from app.utils.digits import to_english_digits
 from app.utils.security import get_admin_user
 
 router = APIRouter(prefix="/api/candidates", tags=["Candidates"])
@@ -155,9 +156,10 @@ async def import_candidates_csv(
     errors: list[str] = []
     created: list[Candidate] = []
     for line, row in enumerate(rows, start=2):
-        voter_no, name_en = row.get("voter_no", ""), row.get("name_en", "")
+        # Bangla digits (১০১) are accepted in voter_no and post_no and stored as English (101)
+        voter_no, name_en = to_english_digits(row.get("voter_no", "")), row.get("name_en", "")
         try:
-            position = by_order.get(int(row.get("post_no", "")))
+            position = by_order.get(int(to_english_digits(row.get("post_no", ""))))
         except ValueError:
             position = None
         if not voter_no or not name_en:

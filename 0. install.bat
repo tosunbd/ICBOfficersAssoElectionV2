@@ -1,10 +1,17 @@
 @echo off
-rem Double-click once on every PC that will run the election system (needs the
-rem internet).  Installs / finds Python and Node.js, builds a fresh Python
-rem virtual environment for THIS PC, installs all packages, builds the UI and
-rem publishes it through IIS:
-rem     http://<this-pc-ip>/election/admin      http://<this-pc-ip>/election/dashboard
-rem Safe to run again (finished steps are skipped).  Then use "1. Start.bat".
+rem ONE CLICK: double-click once on the PC (laptop) that will run the election
+rem system.  It needs the internet this one time and does everything:
+rem   - finds or installs Python and Node.js (nothing else on the PC is changed)
+rem   - builds the Python environment for THIS PC and installs all packages
+rem   - creates the settings file (.env) with a login secret of its own
+rem   - installs the UI packages and builds the UI
+rem   - opens the firewall for the other PCs on the intranet (ports 3000, 8000, 80)
+rem   - laptop: no sleep on mains power, closing the lid does nothing
+rem   - IIS on port 80 as an extra address, when IIS is available
+rem Safe to run again (finished steps are skipped).  Then use "1. Start.bat":
+rem it shows the addresses, e.g.
+rem     http://localhost:3000/election/admin          (on this PC)
+rem     http://<this-pc-ip>:3000/election/admin       (from the other PCs)
 setlocal
 
 rem ------------------------------------------------- settings you may change
@@ -18,11 +25,15 @@ set "NODE_MIN_VERSION=20.9.0"
 rem IIS site and URL prefix the system is published under (port 80).
 set "IIS_SITE=Default Web Site"
 set "IIS_APP_PATH=/election"
-rem yes = do not set up IIS / firewall (then use http://<pc>:3000 directly).
+rem yes = do not set up IIS (the system is then used on port 3000 only, without
+rem the /election prefix).  IIS is an extra: if it cannot be set up the
+rem installation still succeeds.
 set "SKIP_IIS=no"
 rem yes = always delete and rebuild icbOfficerAssoAPI\.venv.  A .venv copied
 rem from another PC is rebuilt automatically anyway.
 set "RECREATE_VENV=no"
+rem yes = leave the sleep / lid settings of this PC as they are.
+set "SKIP_POWER_SETTINGS=no"
 rem ---------------------------------------------------------------------------
 
 title ICB Election System - Install
@@ -38,6 +49,7 @@ if errorlevel 1 (
 set "EXTRA="
 if /i "%SKIP_IIS%"=="yes" set "EXTRA=%EXTRA% -SkipIis"
 if /i "%RECREATE_VENV%"=="yes" set "EXTRA=%EXTRA% -RecreateVenv"
+if /i "%SKIP_POWER_SETTINGS%"=="yes" set "EXTRA=%EXTRA% -SkipPowerSettings"
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\install.ps1" -PythonVersion "%PYTHON_VERSION%" -PythonInstallDir "%PYTHON_INSTALL_DIR%" -NodeMinVersion "%NODE_MIN_VERSION%" -IisSite "%IIS_SITE%" -IisAppPath "%IIS_APP_PATH%" %EXTRA%
 if errorlevel 1 (

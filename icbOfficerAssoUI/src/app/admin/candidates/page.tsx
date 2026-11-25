@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import { errorMessage } from "@/lib/format";
+import { errorMessage, toEnglishDigits } from "@/lib/format";
 import type { Candidate, Position } from "@/lib/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useElection } from "@/hooks/useElection";
 import { useLoader } from "@/hooks/useLoader";
 import { useToast } from "@/components/ui/Toast";
 import { ConfirmDialog, Modal } from "@/components/ui/Modal";
-import { Alert, CardHead, EmptyState, PageHeader, initials } from "@/components/ui/Basics";
+import { Alert, CardHead, EmptyState, NumberInput, PageHeader, initials } from "@/components/ui/Basics";
 import { Icon } from "@/components/ui/Icon";
 
 const EMPTY = { position_id: 0, voter_no: "", name_en: "", name_bn: "", display_order: 0 };
@@ -118,7 +118,7 @@ export default function CandidatesPage() {
               </select></div>
             <div className="input-group"><label className="input-label">Voter / ballot no.</label>
               <div className="input-wrap"><Icon name="hash" size={16} />
-                <input className="input" placeholder="101" value={form.voter_no} onChange={(e) => setForm({ ...form, voter_no: e.target.value })} /></div></div>
+                <input className="input" placeholder="101" value={form.voter_no} onChange={(e) => setForm({ ...form, voter_no: toEnglishDigits(e.target.value) })} /></div></div>
             <div className="input-group"><label className="input-label">Name (English)</label>
               <input className="input" placeholder="Mr. Candidate" value={form.name_en} onChange={(e) => setForm({ ...form, name_en: e.target.value })} /></div>
             <div className="input-group"><label className="input-label">Name (Bengali)</label>
@@ -187,9 +187,9 @@ export default function CandidatesPage() {
         {editing && (
           <div className="form-grid">
             <div className="input-group"><label className="input-label">Voter / ballot no.</label>
-              <input className="input" value={editing.voter_no} onChange={(e) => setEditing({ ...editing, voter_no: e.target.value })} /></div>
+              <input className="input" value={editing.voter_no} onChange={(e) => setEditing({ ...editing, voter_no: toEnglishDigits(e.target.value) })} /></div>
             <div className="input-group"><label className="input-label">Ballot order (0 = first)</label>
-              <input className="input" type="number" min={0} value={editing.display_order} onChange={(e) => setEditing({ ...editing, display_order: Number(e.target.value) })} /></div>
+              <NumberInput className="input" value={editing.display_order} onChange={(n) => setEditing({ ...editing, display_order: n })} /></div>
             <div className="input-group"><label className="input-label">Name (English)</label>
               <input className="input" value={editing.name_en} onChange={(e) => setEditing({ ...editing, name_en: e.target.value })} /></div>
             <div className="input-group"><label className="input-label">Name (Bengali)</label>

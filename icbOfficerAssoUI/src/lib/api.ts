@@ -66,14 +66,36 @@ export async function apiFetch<T>(endpoint: string, options: RequestOptions = {}
   if (rest.body && !(rest.body instanceof FormData)) finalHeaders["Content-Type"] = "application/json";
   if (token) finalHeaders["Authorization"] = `Bearer ${token}`;
 
-  const response = await fetch(`${getApiBaseUrl()}${endpoint}`, { ...rest, headers: finalHeaders });
+  const response = await send(`${getApiBaseUrl()}${endpoint}`, { ...rest, headers: finalHeaders });
   if (!response.ok) throw await parseError(response, `Request failed (HTTP ${response.status})`);
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
+/** No request waits for ever: a server or a network that does not answer gives a clear message after this long. */
+const REQUEST_TIMEOUT_MS = 20000;
+
+/**
+ * fetch with a time limit.  A request that gets no answer (server restarting,
+ * cable or Wi-Fi gone) fails with status 0 and a message the user can act on;
+ * what is on the screen stays, and the same action can simply be done again.
+ */
+async function send(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch {
+    throw new ApiError(0, controller.signal.aborted
+      ? "The server did not answer in time. Nothing was lost: check the network and try again."
+      : "The server cannot be reached. Nothing was lost: check the network (cable / Wi-Fi) and try again.");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function apiBlob(endpoint: string, token: string): Promise<Blob> {
-  const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+  const response = await send(`${getApiBaseUrl()}${endpoint}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) throw await parseError(response, `Request failed (HTTP ${response.status})`);

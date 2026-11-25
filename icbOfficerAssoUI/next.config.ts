@@ -18,11 +18,14 @@ process.env.NEXT_PUBLIC_BASE_PATH ??= rootEnv("NEXT_PUBLIC_BASE_PATH") ?? "";
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH.replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
-  output: "standalone",
   basePath,
   // gzip holds back the live screen's event stream when /api is proxied
   // through Next (UI opened on :3000); on a LAN the saving is negligible.
   compress: false,
+  // http://<this-pc>:3000/ (without the prefix) opens the dashboard instead of "404"
+  async redirects() {
+    return basePath ? [{ source: "/", destination: `${basePath}/dashboard`, basePath: false, permanent: false }] : [];
+  },
   async rewrites() {
     return [
       {

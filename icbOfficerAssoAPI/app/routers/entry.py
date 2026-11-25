@@ -277,6 +277,13 @@ async def enter_ballot(data: EntryRequest, db: AsyncSession = Depends(get_db), u
             raise HTTPException(status_code=409, detail="Counting is paused by the election commission. Saving is possible again after START.")
         entered = await _entered(db, election.id)
         if data.ballot_no in entered:
+            # The same save sent twice (the first answer was lost on the network, or
+            # a double click): it is saved, so answer as the first time.  Anything
+            # else is a real conflict.
+            existing = entered[data.ballot_no]
+            if existing.entered_by_id == user.id and sorted(v.candidate_id for v in existing.votes) == sorted(set(data.candidate_ids)):
+                positions, _ = await ballot_service.layout(db, election.id)
+                return SaveResult(ballot=_entry_ballot(existing, positions), desk=_desk(user, entered, await _pending(db, election.id)))
             raise HTTPException(status_code=409, detail=f"Ballot {label} is already entered.")
         expected = _next_missing(user.ballot_from, user.ballot_to, set(entered))
         if expected is None:

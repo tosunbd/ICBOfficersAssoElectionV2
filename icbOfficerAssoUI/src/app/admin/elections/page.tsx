@@ -9,7 +9,7 @@ import { useElection } from "@/hooks/useElection";
 import { useLoader } from "@/hooks/useLoader";
 import { useToast } from "@/components/ui/Toast";
 import { ConfirmDialog, Modal } from "@/components/ui/Modal";
-import { CardHead, ElectionStatusBadge, EmptyState, PageHeader } from "@/components/ui/Basics";
+import { CardHead, ElectionStatusBadge, EmptyState, NumberInput, PageHeader } from "@/components/ui/Basics";
 import { Icon } from "@/components/ui/Icon";
 import { DEFAULT_COUNCIL_NO, bengaliOrdinal, buildTitleBn, buildTitleEn, englishOrdinal, parseCouncilNo, toBengaliDigits } from "@/lib/electionTitle";
 
@@ -234,13 +234,13 @@ export default function ElectionsPage() {
             <div className="section-title">Add a position</div>
             <div className="form-grid form-grid-4">
               <div className="input-group"><label className="input-label">Order</label>
-                <input className="input" type="number" min={1} value={positionForm.position_order} onChange={(e) => setPositionForm({ ...positionForm, position_order: Number(e.target.value) })} /></div>
+                <NumberInput className="input" value={positionForm.position_order} onChange={(n) => setPositionForm({ ...positionForm, position_order: n })} /></div>
               <div className="input-group"><label className="input-label">Name (English)</label>
                 <input className="input" value={positionForm.name_en} onChange={(e) => setPositionForm({ ...positionForm, name_en: e.target.value })} /></div>
               <div className="input-group"><label className="input-label">Name (Bengali)</label>
                 <input className="input text-bengali" value={positionForm.name_bn} onChange={(e) => setPositionForm({ ...positionForm, name_bn: e.target.value })} /></div>
               <div className="input-group"><label className="input-label">Seats to elect</label>
-                <input className="input" type="number" min={1} value={positionForm.max_selections} onChange={(e) => setPositionForm({ ...positionForm, max_selections: Number(e.target.value) })} /></div>
+                <NumberInput className="input" value={positionForm.max_selections} onChange={(n) => setPositionForm({ ...positionForm, max_selections: n })} /></div>
             </div>
             <div className="flex items-center gap-4 mt-4 flex-wrap">
               <button className="btn btn-primary" disabled={busy || !positionForm.name_en} onClick={addPosition}><Icon name="plus" size={16} /> Add position</button>
@@ -274,9 +274,9 @@ export default function ElectionsPage() {
         {editPosition && (
           <div className="form-grid">
             <div className="input-group"><label className="input-label">Order</label>
-              <input className="input" type="number" min={1} value={editPosition.position_order} onChange={(e) => setEditPosition({ ...editPosition, position_order: Number(e.target.value) })} /></div>
+              <NumberInput className="input" value={editPosition.position_order} onChange={(n) => setEditPosition({ ...editPosition, position_order: n })} /></div>
             <div className="input-group"><label className="input-label">Seats to elect</label>
-              <input className="input" type="number" min={1} value={editPosition.max_selections} onChange={(e) => setEditPosition({ ...editPosition, max_selections: Number(e.target.value) })} /></div>
+              <NumberInput className="input" value={editPosition.max_selections} onChange={(n) => setEditPosition({ ...editPosition, max_selections: n })} /></div>
             <div className="input-group"><label className="input-label">Name (English)</label>
               <input className="input" value={editPosition.name_en} onChange={(e) => setEditPosition({ ...editPosition, name_en: e.target.value })} /></div>
             <div className="input-group"><label className="input-label">Name (Bengali)</label>
@@ -310,25 +310,25 @@ function ElectionForm({ value, onChange }: { value: ElectionFormValue; onChange:
       <div className="form-grid form-grid-3">
         <div className="input-group"><label className="input-label" htmlFor="ef-council">Council no.</label>
           <div className="input-wrap"><Icon name="hash" size={16} />
-            <input id="ef-council" className="input" type="number" min={1} value={value.council_no}
-              onChange={(e) => setNumbers({ council_no: Math.max(0, Number(e.target.value)) })} /></div>
+            <NumberInput id="ef-council" className="input" value={value.council_no}
+              onChange={(n) => setNumbers({ council_no: Math.max(0, n) })} /></div>
           <span className="input-hint">{value.council_no >= 1 ? `${englishOrdinal(value.council_no)} · ${bengaliOrdinal(value.council_no)}` : "At least 1"}</span></div>
         <div className="input-group"><label className="input-label" htmlFor="ef-year">Year</label>
           <div className="input-wrap"><Icon name="clock" size={16} />
-            <input id="ef-year" className="input" type="number" min={1900} value={value.year}
-              onChange={(e) => setNumbers({ year: Number(e.target.value) })} /></div>
+            <NumberInput id="ef-year" className="input" value={value.year}
+              onChange={(n) => setNumbers({ year: n })} /></div>
           <span className="input-hint text-bengali">{toBengaliDigits(value.year)}</span></div>
         <div className="input-group"><label className="input-label" htmlFor="ef-voters">Total voters</label>
           <div className="input-wrap"><Icon name="users" size={16} />
-            <input id="ef-voters" className="input" type="number" min={1} value={value.total_voters}
-              onChange={(e) => onChange({ ...value, total_voters: Number(e.target.value) })} /></div>
+            <NumberInput id="ef-voters" className="input" value={value.total_voters}
+              onChange={(n) => onChange({ ...value, total_voters: n })} /></div>
           <span className="input-hint">Used for the turnout figure</span></div>
       </div>
 
       <div className="input-group"><label className="input-label" htmlFor="ef-seconds">Seconds per ballot on the live screen</label>
         <div className="input-wrap"><Icon name="clock" size={16} />
-          <input id="ef-seconds" className="input" type="number" min={MIN_SECONDS} max={MAX_SECONDS} value={value.ballot_display_seconds}
-            onChange={(e) => onChange({ ...value, ballot_display_seconds: Number(e.target.value) })} /></div>
+          <NumberInput id="ef-seconds" className="input" value={value.ballot_display_seconds}
+            onChange={(n) => onChange({ ...value, ballot_display_seconds: n })} /></div>
         <span className="input-hint">
           {value.ballot_display_seconds >= MIN_SECONDS && value.ballot_display_seconds <= MAX_SECONDS
             ? `Each ballot stays on the public screen for ${value.ballot_display_seconds} s, while counting and in the count shown after Publish. A change applies from the next ballot.`

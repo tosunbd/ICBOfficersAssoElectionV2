@@ -30,6 +30,12 @@ The number ranges are `ENTRY_RANGES` in `.env`.
   number already filled in (000001, 000002, 000003 …). Numbers come one by one: a number
   cannot be skipped, entered twice, or taken from another commissioner's range
   (EC1 cannot enter 160, EC2 cannot enter 320).
+* **Ballot paper number:** six digits, **000001 to 000455**. The paper is printed
+  with the number box empty and the number is stamped into it by hand with an
+  automatic numbering machine; the form shows the number in the same figures,
+  so the screen and the paper in the hand can be compared at a glance.
+  **Ballot Entry · Live → Print blank ballot** (SA, Admin) prints the paper on
+  A4 with that box empty: 50 mm × 16 mm, room for a six-digit stamp.
 * Click a box (or the candidate's name) to put the X. **Select all**, at the
   right of each "ভোটার নং ও প্রার্থীর নাম" heading, ticks or clears every box
   of that side.
@@ -95,18 +101,38 @@ their corrections still need approval.
 
 | Page | URL | Who |
 |---|---|---|
-| Sign in | `/election/admin/login` | all |
+| Sign in | `/election/admin/login` (after `http://<pc>:3000`) | all |
 | Ballot entry / live monitor | `/election/admin/entry` | EC: entry · SA, Admin: monitor |
 | Overview, Results, **Reports**, Ballots, Elections, Candidates, Audit log, Settings | `/election/admin/...` | SA, Admin |
 | Dashboard (projector) | `/election/dashboard` | everyone; refreshed every 2 seconds |
 
 The Reports page (1 Result Summary, 2 Ballot-wise Vote Tally; print / PDF / CSV)
-is the same as in the previous system.
+prints strictly black on white: letterhead with a double rule, the title of
+the sheet in black between two fine rules, white table headings with black
+type and black rules, light grey only to shade the elected candidates. It
+prints the same on any office laser printer and photocopies cleanly.
 
 ## Running (Windows)
 
-1. **`0. install.bat`** — once per PC (Python, Node.js, packages, UI build, IIS `/election`).
-2. **`1. Start.bat`** — every time. **`2. Stop.bat`** stops it.
+1. **`0. install.bat`** — one click, once per PC (needs the internet that one
+   time). Finds or installs Python and Node.js, installs every package, builds
+   the UI, creates `.env` with a login secret of its own, opens the firewall
+   (ports 3000, 8000, 80), sets the laptop not to sleep on mains power and not
+   to react to a closed lid, and sets up IIS on port 80 as an extra address
+   (if IIS cannot be set up the installation still succeeds).
+2. **`1. Start.bat`** — every time. Its window shows the addresses and stays open
+   as the **watchdog**:
+
+   ```
+   On this PC (localhost)
+       Admin / ballot entry :  http://localhost:3000/election/admin
+       Public dashboard     :  http://localhost:3000/election/dashboard
+   From other PCs on the intranet (IP address 192.168.15.57)
+       Admin / ballot entry :  http://192.168.15.57:3000/election/admin
+       Public dashboard     :  http://192.168.15.57:3000/election/dashboard
+   ```
+
+   **`2. Stop.bat`** stops it.
 3. **`3. DBCLEAR.bat`** — before the real count: backs the database up to
    `data\Archive` and empties it (the five logins stay). On the next start the
    2026 election, its 13 posts and 30 candidates are created again.
@@ -115,13 +141,44 @@ The previous system (`ICBOfficersAssoElection`) uses the same ports (8000,
 3000) and the same IIS address, so stop it before starting this one.
 
 The database is `data\icbOfficerAssoDB<year>.db`; it is created on the first
-start together with the users and the election.
+start together with the users and the election. It stays after the count: start
+the system again any day to look at the results, the ballots and the reports.
+
+## Built for a long counting day (10+ hours, on a laptop)
+
+* **Watchdog.** The window of `1. Start.bat` checks the API and the UI every
+  few seconds. A server that stopped or does not answer is started again by
+  itself (a few seconds); the screens reconnect on their own and nobody has to
+  sign in again. The servers run hidden and write to `data\logs`, so a click or
+  a key in a window cannot freeze or close them. Keep the window open; if it is
+  closed by accident the system keeps serving, and `1. Start.bat` puts the
+  watchdog back.
+* **No sleep.** While the system runs the PC is kept awake; `0. install.bat`
+  also turns off sleep on mains power and the lid action. The window warns when
+  the laptop runs on battery: keep the charger in.
+* **Nothing saved is lost.** Every ballot is written to the disk before the
+  desk sees "saved" (SQLite WAL, full sync), so a power cut or a crash cannot
+  lose or damage it. A copy of the database is written to `data\Backups` at
+  every start and stop and every 5 minutes while ballots come in (the newest 60
+  are kept). To go back to a copy: stop the system and put the copy in `data\`
+  under the name `icbOfficerAssoDB<year>.db`.
+* **Network trouble.** A request that gets no answer fails after 20 seconds
+  with a clear message and the ticks stay on the form. A save that is sent
+  twice (the first answer was lost) is one ballot, counted once.
+* **Sign-in lasts two days**, so nobody is signed out in the middle of the count.
+* **Address.** If the laptop gets another IP address the window shows the new
+  addresses; `http://<computer-name>:3000/election/admin` keeps working. A fixed
+  IP address for the laptop on election day is the safest.
+
+Checklist for election day: laptop on the charger and on the office network
+(cable if possible) · `1. Start.bat` · open the "From other PCs" address on the
+three entry PCs · leave the Start window open.
 
 ## Tests
 
 ```
 cd icbOfficerAssoAPI
-.venv\Scripts\python -m pytest        # 34 tests: users, ranges, numbering, null-vote rules, blank ballots, approvals, reports
+.venv\Scripts\python -m pytest        # 36 tests: users, ranges, numbering, null-vote rules, blank ballots, approvals, reports, repeated save, backup
 cd ..\icbOfficerAssoUI
 npm run lint && npm run build
 ```

@@ -1,7 +1,9 @@
 @echo off
-rem Double-click to start the ICB Election System (API + UI in two windows).
-rem Serves the production UI (rebuilt only when it changed); after install.bat
-rem it is also reachable from the LAN as http://<this-pc-ip>/election/...
+rem Double-click to start the ICB Election System.
+rem This window then shows the addresses - on this PC (localhost) and for the
+rem other PCs on the intranet (this PC's IP address) - and stays open as the
+rem WATCHDOG: it restarts a server that stops and keeps the laptop awake.
+rem Keep it open during the election; stop the system with "2. Stop.bat".
 title ICB Election System - Start
 cd /d "%~dp0"
 powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\start-local.ps1" -Production

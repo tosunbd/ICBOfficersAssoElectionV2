@@ -22,7 +22,10 @@ def _configure_sqlite(dbapi_connection, _record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.execute("PRAGMA busy_timeout=5000")
+    # FULL: a saved ballot is on the disk before the desk is told "saved", so a
+    # power cut or a crash of the laptop cannot lose or damage it
+    cursor.execute("PRAGMA synchronous=FULL")
+    cursor.execute("PRAGMA busy_timeout=15000")
     cursor.close()
 
 

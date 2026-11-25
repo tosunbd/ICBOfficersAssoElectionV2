@@ -62,11 +62,14 @@ html.entry-full .entry-desk .entry-side { top: 12px; max-height: calc(100vh - 24
 .bp-title { font-size: clamp(0.86rem, 1.3vw, 1.16rem); font-weight: 700; line-height: 1.35; border-bottom: 1.5px solid var(--bp-line); padding-bottom: 2px; }
 .bp-number { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .bp-number-label { font-size: clamp(0.8rem, 1.2vw, 1.05rem); font-weight: 700; white-space: nowrap; }
-/* six digits (000001 ... 000455): on the printed paper this box is left empty and the numbering machine stamps the number into it */
+/* The stamp space.  Six digits (000001 ... 000455): on the printed paper this box is empty and the number is
+   stamped into it by hand with an automatic numbering machine; on the form it shows the number as the machine
+   stamps it.  Printed size: see .bp-print-root below. */
 .bp-number-box {
-  min-width: clamp(150px, 21vw, 236px); height: clamp(44px, 5.4vw, 64px); padding: 0 14px; display: grid; place-items: center;
-  border: 2px solid var(--bp-blue); font-size: clamp(1.3rem, 2.5vw, 2.05rem); font-weight: 700; letter-spacing: 0.12em; color: var(--bp-ink);
-  background: #fff; white-space: nowrap; font-variant-numeric: tabular-nums;
+  min-width: clamp(170px, 23vw, 250px); height: clamp(48px, 5.8vw, 68px); padding: 0 16px; display: grid; place-items: center;
+  border: 2px solid var(--bp-blue); color: var(--bp-ink); background: #fff; white-space: nowrap;
+  font: 700 clamp(1.4rem, 2.6vw, 2.1rem)/1 'JetBrains Mono', 'Courier New', ui-monospace, monospace;
+  letter-spacing: 0.2em; text-indent: 0.2em; font-variant-numeric: tabular-nums;
 }
 
 .bp-table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 2.5px solid var(--bp-line); }
@@ -233,3 +236,31 @@ html.entry-full .entry-desk .entry-side { top: 12px; max-height: calc(100vh - 24
 .entry-banner { flex-wrap: wrap; }
 .entry-correction-row { display: flex; align-items: center; gap: 10px; padding: 5px 9px; font-size: 0.8rem; }
 .entry-correction-row .badge { text-transform: capitalize; }
+
+/* ---------- "Print blank ballot": the paper on A4, number box empty for the numbering machine ---------- */
+.bp-print-root { display: none; }
+@media print {
+  html:has(body > .bp-print-root), body:has(> .bp-print-root) { background: #fff !important; }
+  body:has(> .bp-print-root) > :not(.bp-print-root) { display: none !important; }
+  .bp-print-root { display: block; }
+  .bp-print-root .bp {
+    --bp-blue: #000; --bp-line: #000; --bp-ink: #000;
+    max-width: none; padding: 0; border-radius: 0; box-shadow: none; animation: none; overflow: visible;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .bp-print-root .bp-selectall { display: none; }
+  .bp-print-root .bp-head-inner { display: block; }
+  .bp-print-root .bp-name.is-on, .bp-print-root .bp-boxcell.is-on { background: none; }
+  .bp-print-root .bp-top { align-items: center; margin-bottom: 5mm; }
+  .bp-print-root .bp-qr { width: 18mm; }
+  .bp-print-root .bp-title { font-size: 12.5pt; }
+  .bp-print-root .bp-number-label { font-size: 11pt; }
+  /* room for a six-digit numbering machine: its figures are about 5 mm high and 25 to 30 mm wide together */
+  .bp-print-root .bp-number-box { width: 50mm; min-width: 50mm; height: 16mm; border: 1.2pt solid #000; padding: 0; }
+  .bp-print-root .bp-head { font-size: 10pt; }
+  .bp-print-root .bp-voter, .bp-print-root .bp-cname, .bp-print-root .bp-post { font-size: 10pt; }
+  .bp-print-root .bp-box { height: 9.5mm; max-width: 19mm; border-width: 1.2pt; }
+  .bp-print-root .bp-table tr { break-inside: avoid; }
+  .bp-print-root .bp-foot { font-size: 9.5pt; margin-top: 4mm; }
+  .bp-print-root .bp-barcode { width: 62mm; height: 9mm; margin-top: 4mm; }
+}

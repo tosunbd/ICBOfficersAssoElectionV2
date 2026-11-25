@@ -9,7 +9,7 @@ import { useElection } from "@/hooks/useElection";
 import { useLoader } from "@/hooks/useLoader";
 import { useToast } from "@/components/ui/Toast";
 import { ConfirmDialog } from "@/components/ui/Modal";
-import { Alert, CardHead, Spinner } from "@/components/ui/Basics";
+import { Alert, CardHead, NumberInput, Spinner } from "@/components/ui/Basics";
 import { Icon } from "@/components/ui/Icon";
 
 function formatSize(bytes: number | null): string {
@@ -88,8 +88,7 @@ export function DatabaseCard() {
               <div className="db-switch">
                 <div className="input-group" style={{ flex: "0 1 180px" }}><label className="input-label" htmlFor="db-year">Election year</label>
                   <div className="input-wrap"><Icon name="clock" size={16} />
-                    <input id="db-year" className="input" type="number" min={2000} max={2100} value={target}
-                      onChange={(e) => setYear(Number(e.target.value))} /></div></div>
+                    <NumberInput id="db-year" className="input" value={target} onChange={setYear} /></div></div>
                 <div className="db-switch-file">
                   <Icon name="arrowRight" size={15} />
                   <code>{templateName(target)}</code>

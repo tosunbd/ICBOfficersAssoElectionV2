@@ -28,9 +28,91 @@ function Use-ProjectRuntime([string]$root) {
 
 # IPv4 addresses other PCs on the LAN can use to reach this one.
 function Get-LanAddresses {
-    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.InterfaceAlias -notlike 'vEthernet*' -and $_.InterfaceAlias -notlike '*Loopback*' } |
-        Select-Object -ExpandProperty IPAddress
+    @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.InterfaceAlias -notlike 'vEthernet*' -and $_.InterfaceAlias -notlike '*Loopback*' -and $_.AddressState -eq 'Preferred' } |
+        Select-Object -ExpandProperty IPAddress | Sort-Object -Unique)
+}
+
+# True when the URL answers (any status below 500) within the timeout.
+function Test-Url([string]$url, [int]$timeoutMs = 5000) {
+    $response = $null
+    try {
+        $request = [Net.HttpWebRequest]::Create($url)
+        $request.Timeout = $timeoutMs
+        $request.ReadWriteTimeout = $timeoutMs
+        $request.Proxy = $null          # never through the office proxy
+        $request.KeepAlive = $false
+        $request.AllowAutoRedirect = $false
+        $response = $request.GetResponse()
+        return ([int]$response.StatusCode -lt 400)
+    } catch {
+        return $false
+    } finally {
+        if ($response) { $response.Close() }
+    }
+}
+
+# Ends whatever listens on a TCP port (with its child processes).
+function Stop-PortOwners([int]$port) {
+    Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique |
+        Where-Object { $_ -gt 4 } |
+        ForEach-Object { taskkill /PID $_ /T /F *> $null }
+}
+
+# True when an enabled inbound firewall rule of this system allows the port.
+function Test-FirewallOpen([int]$port) {
+    try {
+        $rules = Get-NetFirewallRule -DisplayName "ICB Election System*" -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' }
+        foreach ($rule in $rules) {
+            if (($rule | Get-NetFirewallPortFilter).LocalPort -contains "$port") { return $true }
+        }
+        return $false
+    } catch { return $true }   # cannot tell: do not alarm
+}
+
+# Mains / battery state of a laptop (a desktop PC is always "mains power").
+function Get-PowerState {
+    $state = @{ OnBattery = $false; Percent = $null; Text = "mains power" }
+    try {
+        $battery = Get-CimInstance Win32_Battery -ErrorAction Stop | Select-Object -First 1
+        if ($battery) {
+            $state.Percent = [int]$battery.EstimatedChargeRemaining
+            # 1 = discharging, 4 / 5 = low / critical
+            $state.OnBattery = ($battery.BatteryStatus -in 1, 4, 5)
+            $state.Text = if ($state.OnBattery) { "BATTERY $([math]::Floor($state.Percent / 10) * 10)%" } else { "mains power" }
+        }
+    } catch { }
+    return $state
+}
+
+# Prints where the system is reached: on this PC and from the intranet.
+function Show-Addresses([int]$UiPort, [string]$BasePath) {
+    $ips = Get-LanAddresses
+    # also published by IIS on port 80 (set up by '0. install.bat')?
+    $iis = $BasePath -and (Test-Url "http://127.0.0.1$BasePath/favicon.svg" 3000)
+    Write-Host ""
+    Write-Host "  ============================ ADDRESSES ============================" -ForegroundColor Green
+    Write-Host "  On this PC (localhost)" -ForegroundColor White
+    Write-Host "      Admin / ballot entry :  http://localhost:$UiPort$BasePath/admin" -ForegroundColor Green
+    Write-Host "      Public dashboard     :  http://localhost:$UiPort$BasePath/dashboard" -ForegroundColor Green
+    if ($ips.Count -eq 0) {
+        Write-Host "  From other PCs: this PC has NO network address now (cable / Wi-Fi not connected)." -ForegroundColor Yellow
+    }
+    foreach ($ip in $ips) {
+        Write-Host "  From other PCs on the intranet (IP address $ip)" -ForegroundColor White
+        Write-Host "      Admin / ballot entry :  http://${ip}:$UiPort$BasePath/admin" -ForegroundColor Green
+        Write-Host "      Public dashboard     :  http://${ip}:$UiPort$BasePath/dashboard" -ForegroundColor Green
+        if ($iis) {
+            Write-Host "      (also, through IIS)  :  http://$ip$BasePath/admin    http://$ip$BasePath/dashboard" -ForegroundColor DarkGreen
+        }
+    }
+    if ($ips.Count -gt 0) {
+        Write-Host "  By computer name (keeps working if the IP address changes)" -ForegroundColor White
+        Write-Host "      http://$($env:COMPUTERNAME):$UiPort$BasePath/admin" -ForegroundColor Green
+    }
+    Write-Host "  ===================================================================" -ForegroundColor Green
+    Write-Host ""
 }
 
 # Builds the UI (next build) when there is no build yet, a source file is newer

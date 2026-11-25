@@ -57,7 +57,17 @@ class Settings(BaseSettings):
     # --- Auth -------------------------------------------------------------
     JWT_SECRET_KEY: str = "icb-election-super-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 720  # 12 hours: one counting day
+    # A sign-in lasts two days, so nobody is signed out in the middle of a long
+    # counting day (10+ hours) or while the results are looked at afterwards.
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 2880
+
+    # --- Automatic backups --------------------------------------------------
+    # While the system runs, a consistent copy of the database is written to
+    # BACKUP_DIR every BACKUP_INTERVAL_MINUTES when something changed (and once
+    # at every start and stop).  The newest BACKUP_KEEP copies are kept.
+    BACKUP_DIR: str = "./data/Backups"
+    BACKUP_INTERVAL_MINUTES: int = 5     # 0 = no automatic backups
+    BACKUP_KEEP: int = 60
 
     # --- HTTP -------------------------------------------------------------
     CORS_ORIGINS: str = "*"             # comma separated list, or * for any origin
@@ -150,6 +160,10 @@ class Settings(BaseSettings):
             if raw and raw != ":memory:":
                 Path(raw).parent.mkdir(parents=True, exist_ok=True)
         return url
+
+    @property
+    def backup_dir(self) -> Path:
+        return self._resolve(self.BACKUP_DIR)
 
     @property
     def cors_origins_list(self) -> list[str]:

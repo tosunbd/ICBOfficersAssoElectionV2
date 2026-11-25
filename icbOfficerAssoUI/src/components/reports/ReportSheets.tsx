@@ -320,7 +320,7 @@ export function TallyReport({ report, signatories, highlight, onHighlight }: {
         </tbody>
       </table>
       <p className="rpt-note">
-        Dark totals are the elected candidates (yellow, underlined: tie for the last seat). Each candidate&apos;s total equals the votes in the Result Summary.
+        Totals in a bold box on grey are the elected candidates (italic and underlined: tie for the last seat). Each candidate&apos;s total equals the votes in the Result Summary.
         {report.manual_ballots > 0 && ` Manual: the ${report.manual_ballots} ballot${report.manual_ballots === 1 ? "" : "s"} whose selections the Election Commission entered or corrected; they count in the totals.`}
         {report.void_marks > 0 && ` ${report.void_marks} mark${report.void_marks === 1 ? " was" : "s were"} not counted under the ballot rules (ক/খ/গ) and show as 0.`}
       </p>

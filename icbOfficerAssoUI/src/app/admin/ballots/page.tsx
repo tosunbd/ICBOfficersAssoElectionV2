@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api";
-import { errorMessage, formatDateTime } from "@/lib/format";
+import { digitsOnly, errorMessage, formatDateTime } from "@/lib/format";
 import type { Ballot } from "@/lib/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useElection } from "@/hooks/useElection";
@@ -101,7 +101,7 @@ export default function BallotsPage() {
           <div className="input-wrap" style={{ width: 170 }}>
             <Icon name="search" size={15} />
             <input className="input input-sm" inputMode="numeric" placeholder="Ballot no." value={search} aria-label="Find a ballot by its number"
-              onChange={(e) => { setSearch(e.target.value.replace(/\D/g, "")); setPage(1); }} />
+              onChange={(e) => { setSearch(digitsOnly(e.target.value)); setPage(1); }} />
           </div>
           <div className="segmented" role="tablist">
             {FILTERS.map((f) => (

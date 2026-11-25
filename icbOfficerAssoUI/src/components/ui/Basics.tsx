@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { BALLOT_STATUS_BADGE, BALLOT_STATUS_LABEL, ELECTION_STATUS_BADGE } from "@/lib/format";
+import { useState, type InputHTMLAttributes, type ReactNode } from "react";
+import { BALLOT_STATUS_BADGE, BALLOT_STATUS_LABEL, ELECTION_STATUS_BADGE, parseNumber } from "@/lib/format";
 import type { BallotStatus, ElectionStatus } from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
 
@@ -102,6 +102,38 @@ export function Switch({ checked, onChange, label, description, gold, disabled }
       <span className="switch-track" aria-hidden="true" />
       <span className="switch-text">{label}{description && <small>{description}</small>}</span>
     </button>
+  );
+}
+
+/**
+ * Whole-number field that understands Bangla (০-৯) and English (0-9) digits,
+ * also mixed.  Used instead of <input type="number">, which drops Bangla
+ * digits.  What was typed stays on screen; onChange gets the number.
+ */
+export function NumberInput({ value, onChange, ...rest }: {
+  value: number; onChange: (value: number) => void;
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type">) {
+  const [text, setText] = useState(String(value));
+  // follow a value set from outside (a form reset, another field) unless the typed text already means it
+  const [seen, setSeen] = useState(value);
+  if (value !== seen) {
+    setSeen(value);
+    if (parseNumber(text) !== value) setText(String(value));
+  }
+  return (
+    <input
+      {...rest} type="text" inputMode="numeric" autoComplete="off" value={text}
+      onChange={(e) => {
+        const cleaned = e.target.value.replace(/[^0-9০-৯]/g, "");  // digits of either script
+        setText(cleaned);
+        const n = parseNumber(cleaned);
+        if (n !== null) { setSeen(n); onChange(n); }
+      }}
+      onBlur={(e) => {
+        if (parseNumber(text) === null) setText(String(value));  // an emptied field shows the number in use
+        rest.onBlur?.(e);
+      }}
+    />
   );
 }
 

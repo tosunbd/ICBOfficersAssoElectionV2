@@ -4,7 +4,7 @@ import "../../entry.css";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
-import { errorMessage, formatDateTime } from "@/lib/format";
+import { digitsOnly, errorMessage, formatDateTime } from "@/lib/format";
 import type { Candidate, Correction, Desk, EntryBallot, EntryState, Position } from "@/lib/types";
 import { useAuth } from "@/hooks/useAuth";
 import { useLoader } from "@/hooks/useLoader";
@@ -12,7 +12,7 @@ import { useToast } from "@/components/ui/Toast";
 import { ConfirmDialog, Modal } from "@/components/ui/Modal";
 import { Alert, CardHead, EmptyState, PageHeader, Spinner } from "@/components/ui/Basics";
 import { Icon } from "@/components/ui/Icon";
-import { BallotPaper, buildRows, checkBallot, sideIds, type Side } from "@/components/entry/BallotPaper";
+import { BallotPaper, PrintBlankBallot, buildRows, checkBallot, sideIds, type Side } from "@/components/entry/BallotPaper";
 
 const FALLBACK_TITLE = "আইসিবি কর্মকর্তা সমিতির কার্যনির্বাহী পরিষদ নির্বাচন";
 
@@ -500,7 +500,7 @@ function EntryDesk() {
               </div>
             )}
             <form className="entry-find" onSubmit={find} style={{ marginTop: 12 }}>
-              <input className="input input-sm" inputMode="numeric" placeholder="Open ballot no." value={findNo} onChange={(e) => setFindNo(e.target.value.replace(/\D/g, ""))} aria-label="Ballot number to open" />
+              <input className="input input-sm" inputMode="numeric" placeholder="Open ballot no." value={findNo} onChange={(e) => setFindNo(digitsOnly(e.target.value))} aria-label="Ballot number to open" />
               <button className="btn btn-ghost btn-sm" type="submit" disabled={!findNo}><Icon name="search" size={14} /> Open</button>
             </form>
           </div>
@@ -633,7 +633,7 @@ function EntryMonitor() {
   }, [token, toast]);
 
   // /admin/entry?ballot=12 (from the ballot register; &edit=1 opens it for editing)
-  const wanted = Number(params.get("ballot"));
+  const wanted = Number(digitsOnly(params.get("ballot") ?? ""));
   const wantedEdit = params.get("edit") === "1";
   const openWanted = useCallback(async () => {
     if (Number.isInteger(wanted) && wanted > 0) await open(wanted, wantedEdit);
@@ -722,7 +722,12 @@ function EntryMonitor() {
     <div className="page">
       <PageHeader eyebrow="Counting" title="Ballot entry · live monitor"
         subtitle="What EC1, EC2 and EC3 are entering right now. Ballots are entered at the desks; open any saved ballot to check it or to edit it."
-        actions={<span className="badge badge-primary"><Icon name="vote" />{state.total_entered} of {state.total_ballots} entered · {overall}%</span>} />
+        actions={
+          <>
+            <PrintBlankBallot titleBn={state.election.title_bn ?? FALLBACK_TITLE} rows={rows} />
+            <span className="badge badge-primary"><Icon name="vote" />{state.total_entered} of {state.total_ballots} entered · {overall}%</span>
+          </>
+        } />
 
       {loadError && <Alert type="error">Connection problem: {loadError}</Alert>}
       {layoutError && <Alert type="error">{layoutError}</Alert>}
@@ -860,7 +865,7 @@ function EntryMonitor() {
           <div className="card">
             <CardHead icon="search" title="Open a ballot" subtitle="Any saved ballot, by its number" />
             <form className="entry-find" onSubmit={find}>
-              <input className="input" inputMode="numeric" placeholder="Ballot no., e.g. 12" value={findNo} onChange={(e) => setFindNo(e.target.value.replace(/\D/g, ""))} aria-label="Ballot number to open" />
+              <input className="input" inputMode="numeric" placeholder="Ballot no., e.g. 12" value={findNo} onChange={(e) => setFindNo(digitsOnly(e.target.value))} aria-label="Ballot number to open" />
               <button className="btn btn-primary" type="submit" disabled={!findNo}><Icon name="eye" size={15} /> View</button>
             </form>
           </div>

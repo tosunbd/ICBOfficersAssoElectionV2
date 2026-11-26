@@ -95,7 +95,6 @@ function PostName({ p }: { p: ReportPosition }) {
 
 export function SummaryReport({ report, signatories }: { report: ElectionReport; signatories: string[] }) {
   const { stats } = report;
-  const ties = report.positions.filter((p) => p.candidates.some((c) => c.outcome === "tie"));
   const turnout = report.total_voters ? (stats.counted_ballots / report.total_voters) * 100 : 0;
 
   return (
@@ -133,7 +132,7 @@ export function SummaryReport({ report, signatories }: { report: ElectionReport;
             const elected = p.candidates.filter((c) => c.outcome === "elected");
             const tied = p.candidates.filter((c) => c.outcome === "tie");
             const firstLoser = p.candidates.find((c) => !c.outcome);
-            const rows = elected.length + (tied.length ? 1 : 0) || 1;
+            const rows = elected.length + tied.length || 1;
             return (
               <Fragment key={p.position_id}>
                 {elected.map((c, i) => (
@@ -145,16 +144,16 @@ export function SummaryReport({ report, signatories }: { report: ElectionReport;
                     <td className="num mono">{firstLoser ? `+${c.votes - firstLoser.votes}` : "—"}</td>
                   </tr>
                 ))}
-                {tied.length > 0 && (
-                  <tr className={elected.length === 0 ? "rpt-group-start" : ""}>
-                    {elected.length === 0 && <><td className="num rpt-post-no" rowSpan={rows}>{String(p.position_order).padStart(2, "0")}</td><td rowSpan={rows}><PostName p={p} /></td><td className="num" rowSpan={rows}>{p.max_selections}</td></>}
-                    <td className="num mono">{tied.map((c) => c.voter_no).join(", ")}</td>
-                    <td className="rpt-tie" colSpan={3}>
-                      Tie on {tied[0].votes} vote{tied[0].votes === 1 ? "" : "s"} between {tied.map((c) => c.name_bn ?? c.name_en).join(" and ")}
-                      {" "}for {elected.length ? "the last seat" : p.max_selections > 1 ? `${p.max_selections - elected.length} seats` : "the seat"}: to be decided by the Election Commission
-                    </td>
+                {/* Equal votes for the last seat: list each candidate with the count, no verdict. */}
+                {tied.map((c, i) => (
+                  <tr key={c.candidate_id} className={elected.length === 0 && i === 0 ? "rpt-group-start" : ""}>
+                    {elected.length === 0 && i === 0 && <><td className="num rpt-post-no" rowSpan={rows}>{String(p.position_order).padStart(2, "0")}</td><td rowSpan={rows}><PostName p={p} /></td><td className="num" rowSpan={rows}>{p.max_selections}</td></>}
+                    <td className="num mono">{c.voter_no}</td>
+                    <td><div className="rpt-winner-name"><span>{c.name_bn && <span className="rpt-bn">{c.name_bn}</span>}<span className={c.name_bn ? "rpt-name-en-inline" : ""}>{c.name_en}</span></span></div></td>
+                    <td className="num mono strong">{c.votes}</td>
+                    <td className="num mono">—</td>
                   </tr>
-                )}
+                ))}
                 {elected.length === 0 && tied.length === 0 && (
                   <tr className="rpt-group-start">
                     <td className="num rpt-post-no">{String(p.position_order).padStart(2, "0")}</td><td><PostName p={p} /></td><td className="num">{p.max_selections}</td>
@@ -185,7 +184,7 @@ export function SummaryReport({ report, signatories }: { report: ElectionReport;
           {report.positions.map((p) => (
             <tbody key={p.position_id} className="rpt-all-post">
               {p.candidates.map((c, i) => (
-                <tr key={c.candidate_id} className={c.outcome ? `is-${c.outcome}` : ""}>
+                <tr key={c.candidate_id} className={c.outcome === "elected" ? "is-elected" : ""}>
                   {i === 0 && (
                     <>
                       <td className="num rpt-post-no" rowSpan={p.candidates.length}>{String(p.position_order).padStart(2, "0")}</td>
@@ -200,13 +199,12 @@ export function SummaryReport({ report, signatories }: { report: ElectionReport;
                   <td className="rpt-all-name">{c.name_bn && <span className="rpt-bn">{c.name_bn}</span>}<span className={c.name_bn ? "rpt-name-en-inline" : ""}>{c.name_en}</span></td>
                   <td className="num mono strong">{c.votes}</td>
                   <td className="num mono">{c.percentage.toFixed(2)}</td>
-                  <td className="num rpt-result">{c.outcome === "elected" ? "ELECTED" : c.outcome === "tie" ? "TIE" : ""}</td>
+                  <td className="num rpt-result">{c.outcome === "elected" ? "ELECTED" : ""}</td>
                 </tr>
               ))}
             </tbody>
           ))}
         </table>
-        {ties.length > 0 && <p className="rpt-note">TIE: equal votes for the last seat of a post; the Election Commission decides as per the constitution.</p>}
         <Signatures compact signatories={signatories}
           statement={<>Annex to the Result Summary: votes received by each of the {report.positions.reduce((n, p) => n + p.candidates.length, 0)} candidates.</>} />
       </section>

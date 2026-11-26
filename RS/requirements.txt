@@ -1,0 +1,5 @@
+# Packages rs.py needs (the same ballot-reading packages as the counting system)
+opencv-python-headless>=4.10.0
+numpy>=2.0.0
+Pillow>=11.0.0
+pypdfium2>=4.30.0
